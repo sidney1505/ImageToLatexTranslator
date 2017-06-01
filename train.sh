@@ -1,0 +1,1 @@
+python src/train.py --batch-dir data/sample/train_batches
