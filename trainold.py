@@ -31,7 +31,7 @@ def length(sequence):
     return length
 
 def createCNNModel(network):
-    network = tflearn.layers.conv.conv_2d(network, 64, 3, activation='relu') # padding???
+    network = conv_2d(network, 64, 3, activation='relu') # padding???
     network = max_pool_2d(network, 2, strides=2)
 
     network = conv_2d(network, 128, 3, activation='relu')
@@ -59,38 +59,23 @@ def createEncoderLSTM(network):
     
     rnncell_fw = tf.contrib.rnn.LSTMCell(128) # TODO choose parameter
     rnncell_bw = tf.contrib.rnn.LSTMCell(128) # TODO choose parameter
-    # code.interact(local=locals())
     # initial_state_bw = tf.contrib.rnn.core_rnn_cell.LSTMStateTuple(128,tf.float32)
     # code.interact(local=locals())
-    # code.interact(local=locals())
-    # net = tf.zeros(shape=tf.shape(network)[0], dtype=tf.float32)
-    # y =  tf.Variable(np.zeros((5,7,3)))
-
-    l = tf.TensorArray(dtype=tf.float32, size=tf.shape(network)[0])
-#     attention_tracker = tensor_array_ops.TensorArray(tf.float32, size=1, dynamic_size=True,     infer_shape=False)
-
-    params = [tf.constant(0), network, l]
-    while_condition = lambda i, network, l: tf.less(i, tf.shape(network)[0])
-    def body(i, network, l):
+    net = []
+    i = tf.constant(0)
+    while_condition = lambda i: tf.less(i, tf.shape(network)[0])
+    def body(i):
         print('hi')
         print(i)
         print(tf.shape(network)[0])
-        net = tf.nn.bidirectional_dynamic_rnn(rnncell_fw, rnncell_bw, network[i], dtype=tf.float32)
-        # code.interact(local=locals())
-        # netvar = tf.Variable(network)
-        # network = tf.scatter_nd_update(network, [i], net)
+        net = [tf.nn.bidirectional_dynamic_rnn(rnncell_fw, rnncell_bw, network[i], dtype=tf.float32)]
         # sequence_length=length(network[i]), initial_state_fw=initial_state_fw, initial_state_bw=initial_state_bw)
         print('bbb')
-        l = l.write(i, net)        
-        return [tf.add(i, 1), network, l]
+        return [tf.add(i, 1)]
 
 
-    i, network, l = tf.while_loop(while_condition, body, params) #aaa
-    print('after')
-    # code.interact(local=locals())
-    #i = ret.pop(0)
-    #network = tf.Variable(ret)    
-    #code.interact(local=locals())
+    aaa = tf.while_loop(while_condition, body, [i])
+    code.interact(local=locals())
         #code.interact(local=locals())
     #network = tf.constant(np.zeros((4,2,5)))
     #network = tf.nn.bidirectional_dynamic_rnn(rnncell_fw, rnncell_bw, network, dtype=tf.float64)
@@ -119,7 +104,7 @@ def createEncoderLSTM(network):
     #output = inference[:real_height] # output for each i
 
     # return network
-    return l.stack(), i #
+    return network, aaa
 
 class Model:
     def __init__(self, batchsize):
@@ -130,11 +115,8 @@ class Model:
         self.input_var = network
         # How do I test parts of the network??
         network = createCNNModel(network)
-        self.convshape = tf.shape(network)
         network, aaa = createEncoderLSTM(network)
-        self.encshape = tf.shape(network)
         self.aaa = aaa
-        self.aaaNetwork = network
 
         self.model = tflearn.DNN(network)
 
@@ -152,26 +134,19 @@ def main(args):
     batchfiles = os.listdir(batch_dir)
     batchsize = parameters.batch_size
     model = Model(batchsize)
-    sess = tf.Session()
-    init_op = tf.global_variables_initializer()
-    sess.run(init_op)
     if phase == "training": # epochs!!!
         for i in range(model.nr_epochs):
             for batchfile in batchfiles: # randomise!!!
-                print('load ' + batchfile + '!')
                 batch = np.load(batch_dir + '/' + batchfile)
                 images = batch['images']
                 labels = batch['labels']
                 if len(images) != 0:
                     code.interact(local=locals())
-                    sess.run(model.aaaNetwork, feed_dict={model.input_var:images})
-                    print(images[0].shape)
+                    model.aaa
                     pred = np.array(model.model.predict(images))
                     print(pred.shape)
                     print(model.aaa)
-                    #sess.run(model.aaa, feed_dict={model.input_var:images})
-                # model.fit(batch) 
-    sess.close()           
+                # model.fit(batch)            
 
 if __name__ == '__main__':
     main(sys.argv[1:])

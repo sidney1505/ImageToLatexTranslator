@@ -1,1 +1,1 @@
-python src/train.py --batch-dir data/sample/train_batches
+python train.py --batch-dir ../im2markup/data/sample/train_batches
