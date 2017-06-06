@@ -53,72 +53,23 @@ def createCNNModel(network):
     return network
 
 def createEncoderLSTM(network):
-    network = tf.transpose(network, [1,0,2,3])
-
-
-    
+    batchsize = tf.shape(network)[0]
+    network = tf.transpose(network, [1,0,2,3])    
     rnncell_fw = tf.contrib.rnn.LSTMCell(128) # TODO choose parameter
+    # code.interact(local=locals())
+    fw_state = rnncell_fw.zero_state(batch_size=batchsize, dtype=tf.float32)
     rnncell_bw = tf.contrib.rnn.LSTMCell(128) # TODO choose parameter
-    # code.interact(local=locals())
-    # initial_state_bw = tf.contrib.rnn.core_rnn_cell.LSTMStateTuple(128,tf.float32)
-    # code.interact(local=locals())
-    # code.interact(local=locals())
-    # net = tf.zeros(shape=tf.shape(network)[0], dtype=tf.float32)
-    # y =  tf.Variable(np.zeros((5,7,3)))
-
+    bw_state = rnncell_bw.zero_state(batch_size=batchsize, dtype=tf.float32)
     l = tf.TensorArray(dtype=tf.float32, size=tf.shape(network)[0])
-#     attention_tracker = tensor_array_ops.TensorArray(tf.float32, size=1, dynamic_size=True,     infer_shape=False)
-
-    params = [tf.constant(0), network, l]
-    while_condition = lambda i, network, l: tf.less(i, tf.shape(network)[0])
-    def body(i, network, l):
-        print('hi')
-        print(i)
-        print(tf.shape(network)[0])
-        net = tf.nn.bidirectional_dynamic_rnn(rnncell_fw, rnncell_bw, network[i], dtype=tf.float32)
-        # code.interact(local=locals())
-        # netvar = tf.Variable(network)
-        # network = tf.scatter_nd_update(network, [i], net)
-        # sequence_length=length(network[i]), initial_state_fw=initial_state_fw, initial_state_bw=initial_state_bw)
-        print('bbb')
-        l = l.write(i, net)        
-        return [tf.add(i, 1), network, l]
-
-
-    i, network, l = tf.while_loop(while_condition, body, params) #aaa
-    print('after')
-    # code.interact(local=locals())
-    #i = ret.pop(0)
-    #network = tf.Variable(ret)    
-    #code.interact(local=locals())
-        #code.interact(local=locals())
-    #network = tf.constant(np.zeros((4,2,5)))
-    #network = tf.nn.bidirectional_dynamic_rnn(rnncell_fw, rnncell_bw, network, dtype=tf.float64)
-        # sequence_length=length(network), 
-            # initial_state_fw=initial_state_fw, initial_state_bw=initial_state_bw
-            #dtype=rnncell_fw.state_size
-            
-    #i = tf.constant(0)
-    #while_condition = lambda i: tf.less(i, tf.shape(network)[0])
-    #rnncell_fw = tflearn.layers.recurrent.BasicLSTMCell(128)
-    #rnncell_bw = tflearn.layers.recurrent.BasicLSTMCell(128)
-    #code.interact(local=locals())
-    #def body(i):
-    #    network[i] = tflearn.layers.recurrent.bidirectional_rnn(network[i], rnncell_fw, rnncell_bw, return_seq=True, dynamic=True)
-    #    return [tf.add(i, 1)]
-
-    #tf.while_loop(while_condition, body, [i])
-
-    #i = 0
-    #MAX_HEIGHT = 1000
-    #real_height = 50
-
-    #axes = [1, 0] + list(range(2, 3)) # 3 is number of axis of input
-    #inference = tf.transpose(network[i], (axes))
-    #inference = tf.unstack(inference, num=MAX_HEIGHT)
-    #output = inference[:real_height] # output for each i
-
-    # return network
+    params = [tf.constant(0), network, l, fw_state, bw_state]
+    while_condition = lambda i, network, l, fw_state, bw_state: tf.less(i, tf.shape(network)[0])
+    def body(i, network, l, fw_state, bw_state):
+        outputs, output_states = tf.nn.bidirectional_dynamic_rnn(rnncell_fw, rnncell_bw, network[i], initial_state_fw=fw_state,initial_state_bw=bw_state) #,dtype=tf.float32)
+        fw_state, bw_state = output_states
+        code.interact(local=locals())
+        l = l.write(i, outputs)        
+        return [tf.add(i, 1), network, l, fw_state, bw_state]
+    i, network, l, fw_state, bw_state = tf.while_loop(while_condition, body, params)
     return l.stack(), i #
 
 class Model:
@@ -130,7 +81,7 @@ class Model:
         self.input_var = network
         # How do I test parts of the network??
         network = createCNNModel(network)
-        self.convshape = tf.shape(network)
+        self.convshape = network
         network, aaa = createEncoderLSTM(network)
         self.encshape = tf.shape(network)
         self.aaa = aaa
@@ -163,12 +114,13 @@ def main(args):
                 images = batch['images']
                 labels = batch['labels']
                 if len(images) != 0:
-                    code.interact(local=locals())
-                    sess.run(model.aaaNetwork, feed_dict={model.input_var:images})
-                    print(images[0].shape)
+                    # code.interact(local=locals())
+                    # sess.run(model.aaaNetwork, feed_dict={model.input_var:images})
+                    print(images.shape)
                     pred = np.array(model.model.predict(images))
+                    print(model.convshape.shape)
                     print(pred.shape)
-                    print(model.aaa)
+                    # print(model.aaa)
                     #sess.run(model.aaa, feed_dict={model.input_var:images})
                 # model.fit(batch) 
     sess.close()           
