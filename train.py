@@ -54,11 +54,11 @@ def createCNNModel(network):
 
 def createEncoderLSTM(network):
     batchsize = tf.shape(network)[0]
-    network = tf.transpose(network, [1,0,2,3])    
-    rnncell_fw = tf.contrib.rnn.LSTMCell(128) # TODO choose parameter
-    # code.interact(local=locals())
+    network = tf.transpose(network, [1,0,2,3])
+    rnncell_fw = tf.contrib.rnn.LSTMCell(256) # TODO choose parameter
+    # trainable hidden state??? (postional embedding)
     fw_state = rnncell_fw.zero_state(batch_size=batchsize, dtype=tf.float32)
-    rnncell_bw = tf.contrib.rnn.LSTMCell(128) # TODO choose parameter
+    rnncell_bw = tf.contrib.rnn.LSTMCell(256) # TODO choose parameter
     bw_state = rnncell_bw.zero_state(batch_size=batchsize, dtype=tf.float32)
     l = tf.TensorArray(dtype=tf.float32, size=tf.shape(network)[0])
     params = [tf.constant(0), network, l, fw_state, bw_state]
@@ -66,14 +66,57 @@ def createEncoderLSTM(network):
     def body(i, network, l, fw_state, bw_state):
         outputs, output_states = tf.nn.bidirectional_dynamic_rnn(rnncell_fw, rnncell_bw, network[i], initial_state_fw=fw_state,initial_state_bw=bw_state) #,dtype=tf.float32)
         fw_state, bw_state = output_states
-        code.interact(local=locals())
+        # scode.interact(local=locals())
         l = l.write(i, outputs)        
         return [tf.add(i, 1), network, l, fw_state, bw_state]
     i, network, l, fw_state, bw_state = tf.while_loop(while_condition, body, params)
-    return l.stack(), i #
+    network = l.stack()
+    network = tf.transpose(network, perm=[2,0,3,1,4])
+    s = tf.shape(network)
+    network = tf.reshape(network, [s[0],s[1],s[2],s[3]*s[4]])
+    return network, i #
+
+def createDecoderLSTM(network, num_classes):
+    # num_classes = 200 # class variable!!!
+    dim_beta = 50 # hyperparameter!!!
+    dim_h = 512 # hyperparameter!!!
+    num_features = network.shape[3]
+    dim_o = num_features + dim_h
+    batchsize = tf.shape(network)[0]
+    #
+    rnncell_fw = tf.contrib.rnn.LSTMCell(256) #size is hyperparamter!!!
+    fw_state = rnncell_fw.zero_state(batch_size=batchsize, dtype=tf.float32) # batchsize???
+    # used variables
+    beta = tf.Variable(tf.random_normal([dim_beta])) # size is hyperparamter!!!
+    w1 = tf.Variable(tf.random_normal([dim_beta, dim_h])) # dim_beta x dim_h
+    w2 = tf.Variable(tf.random_normal([dim_beta, num_features])) # dim_beta x num_features
+    wc = tf.Variable(tf.random_normal([dim_o])) # (num_features + dim_h) (x hyperparam) ??? (= dim_o) ???
+    wout = tf.Variable(tf.random_normal([num_classes, dim_o])) # num_classes x dim_o
+    # initial states, ebenfalls Variablen???
+    h0 = tf.zeros([batchsize,dim_h]) # 
+    y0 = tf.zeros([batchsize,num_classes]) #
+    o0 = tf.zeros([batchsize,dim_o]) #
+    l = tf.TensorArray(dtype=tf.float32, size=tf.constant(num_classes))
+    params = [tf.constant(0), network, l, h0, y0, o0]
+    while_condition = lambda t, network, l, h, y, o: tf.less(t, tf.constant(80)) # token embedding??
+    def body(t, network, l, h, y, o):
+        e = beta * tanh(w1 * h + w2 * network) # shapes angleichen?? batches??
+        alpha = tf.softmax(e)
+        c = tf.multiply(alpha,network)
+        c = tf.transpose(c, perm=[1,2,0,3]) # put rows and columns in front in order to sum over them
+        c = foldl(lambda a, x: a + x, c) # sums over rows
+        c = foldl(lambda a, x: a + x, c) # sums over columns
+        h = lstm(h, tf.concat([y,o],1)) # was ist mit dem cell state??   # !!!!!      
+        o = tanh(wc * tf.concat([h,c],1)) # !!!!!      
+        y = softmax(wout * o)
+        l = l.write(t, y)
+        return [tf.add(t, 1), network, l, h, y, o]
+    t, network, l, h, y, o = tf.while_loop(while_condition, body, params)
+    return l.stack()
 
 class Model:
     def __init__(self, batchsize):
+        self.num_classes = 0
         self.nr_epochs = 1
         self.batchsize = batchsize
         # H,W,batchsize, was bedeutet input_data???
@@ -113,6 +156,7 @@ def main(args):
                 batch = np.load(batch_dir + '/' + batchfile)
                 images = batch['images']
                 labels = batch['labels']
+                model.num_classes = len(labels[0])
                 if len(images) != 0:
                     # code.interact(local=locals())
                     # sess.run(model.aaaNetwork, feed_dict={model.input_var:images})
