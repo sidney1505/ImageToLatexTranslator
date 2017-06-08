@@ -107,7 +107,7 @@ def main(args):
             	labels.append(label)
             	if len(pixs) >= 1000: # 1000 optimale wahl???
             		with open(output_path + "/" + name, 'w') as fout:
-    					np.savez(fout, images=np.array(pixs), labels=np.array(labels))
+    					np.savez(fout, images=np.array(pixs), labels=np.array(labels), num_classes=len(vocabulary))
                         print(name + ' saved!')
             		buckets.pop(b)
             	else:
@@ -118,7 +118,7 @@ def main(args):
     for batch in buckets:
     	name, pixs, labels = batch 
     	with open(output_path + "/" + name, 'w') as fout:
-            np.savez(fout, images=np.array(pixs), labels=np.array(labels))
+            np.savez(fout, images=np.array(pixs), labels=np.array(labels), num_classes=len(vocabulary))
             print(name + ' saved!')
 
 if __name__ == '__main__':

@@ -66,49 +66,60 @@ def createEncoderLSTM(network):
     def body(i, network, l, fw_state, bw_state):
         outputs, output_states = tf.nn.bidirectional_dynamic_rnn(rnncell_fw, rnncell_bw, network[i], initial_state_fw=fw_state,initial_state_bw=bw_state) #,dtype=tf.float32)
         fw_state, bw_state = output_states
-        # scode.interact(local=locals())
+        # code.interact(local=locals())
         l = l.write(i, outputs)        
         return [tf.add(i, 1), network, l, fw_state, bw_state]
     i, network, l, fw_state, bw_state = tf.while_loop(while_condition, body, params)
     network = l.stack()
     network = tf.transpose(network, perm=[2,0,3,1,4])
     s = tf.shape(network)
+    # code.interact(local=locals())
+    num_features = (network.shape[3] * network.shape[4]).value # other solution???
     network = tf.reshape(network, [s[0],s[1],s[2],s[3]*s[4]])
-    return network, i #
+    return network, i, num_features #
 
-def createDecoderLSTM(network, num_classes):
+def createDecoderLSTM(network, num_classes, num_features):
     # num_classes = 200 # class variable!!!
+
     dim_beta = 50 # hyperparameter!!!
     dim_h = 512 # hyperparameter!!!
-    num_features = network.shape[3]
+    batchsize = tf.shape(network)[0] # besserer weg???
+    # num_features = network.shape[3]
     dim_o = num_features + dim_h
-    batchsize = tf.shape(network)[0]
-    #
-    rnncell_fw = tf.contrib.rnn.LSTMCell(256) #size is hyperparamter!!!
-    fw_state = rnncell_fw.zero_state(batch_size=batchsize, dtype=tf.float32) # batchsize???
+    # the used rnncell
+    rnncell = tf.contrib.rnn.LSTMCell(256, state_is_tuple=False, reuse=None) #size is hyperparamter!!!
     # used variables
     beta = tf.Variable(tf.random_normal([dim_beta])) # size is hyperparamter!!!
     w1 = tf.Variable(tf.random_normal([dim_beta, dim_h])) # dim_beta x dim_h
-    w2 = tf.Variable(tf.random_normal([dim_beta, num_features])) # dim_beta x num_features
+    # 
+    w2 = tf.Variable(tf.random_normal([num_features, dim_beta])) # num_features x dim_beta
+    # weight
     wc = tf.Variable(tf.random_normal([dim_o])) # (num_features + dim_h) (x hyperparam) ??? (= dim_o) ???
+    # weight
     wout = tf.Variable(tf.random_normal([num_classes, dim_o])) # num_classes x dim_o
     # initial states, ebenfalls Variablen???
     h0 = tf.zeros([batchsize,dim_h]) # 
     y0 = tf.zeros([batchsize,num_classes]) #
     o0 = tf.zeros([batchsize,dim_o]) #
+    # brings network in shape for element wise multiplikation
+    network_ = tf.expand_dims(network,4)
+    # create necessaties for the while-loop
     l = tf.TensorArray(dtype=tf.float32, size=tf.constant(num_classes))
     params = [tf.constant(0), network, l, h0, y0, o0]
     while_condition = lambda t, network, l, h, y, o: tf.less(t, tf.constant(80)) # token embedding??
     def body(t, network, l, h, y, o):
-        e = beta * tanh(w1 * h + w2 * network) # shapes angleichen?? batches??
-        alpha = tf.softmax(e)
-        c = tf.multiply(alpha,network)
+        e = tf.tensordot(beta,tf.tanh(tf.tensordot(h,w1,[[0],[1]]) + w2 * network_),[[0],[4]]) # batchsize x height x width x num_features # shapes angleichen?? batches??
+        alpha = tf.nn.softmax(e) # batchsize x height x width x num_features # zeilenweise normieren!!!
+        c = alpha * network
         c = tf.transpose(c, perm=[1,2,0,3]) # put rows and columns in front in order to sum over them
-        c = foldl(lambda a, x: a + x, c) # sums over rows
-        c = foldl(lambda a, x: a + x, c) # sums over columns
-        h = lstm(h, tf.concat([y,o],1)) # was ist mit dem cell state??   # !!!!!      
-        o = tanh(wc * tf.concat([h,c],1)) # !!!!!      
-        y = softmax(wout * o)
+        # sums over rows
+        c = tf.foldl(lambda a, x: a + x, c)
+        # sums over columns
+        c = tf.foldl(lambda a, x: a + x, c) # batchsize x num_features
+        oput,h = rnncell.__call__(tf.concat([y,o],1), h) # batchsize x dim_h  # cell state & input als parameter uebergeben!!!
+        # code.interact(local=locals())
+        o = tf.tanh(wc * tf.concat([h,c],1)) # batchsize x dim_o
+        y = tf.nn.softmax(tf.tensordot(o,wout,[[1],[1]])) # batch_size x num_classes # zeilenweise normieren!!!
         l = l.write(t, y)
         return [tf.add(t, 1), network, l, h, y, o]
     t, network, l, h, y, o = tf.while_loop(while_condition, body, params)
@@ -116,7 +127,7 @@ def createDecoderLSTM(network, num_classes):
 
 class Model:
     def __init__(self, batchsize):
-        self.num_classes = 0
+        self.num_classes = 200
         self.nr_epochs = 1
         self.batchsize = batchsize
         # H,W,batchsize, was bedeutet input_data???
@@ -125,10 +136,11 @@ class Model:
         # How do I test parts of the network??
         network = createCNNModel(network)
         self.convshape = network
-        network, aaa = createEncoderLSTM(network)
+        network, aaa, num_features = createEncoderLSTM(network)
         self.encshape = tf.shape(network)
         self.aaa = aaa
         self.aaaNetwork = network
+        network = createDecoderLSTM(network, self.num_classes, num_features)
 
         self.model = tflearn.DNN(network)
 
@@ -156,7 +168,7 @@ def main(args):
                 batch = np.load(batch_dir + '/' + batchfile)
                 images = batch['images']
                 labels = batch['labels']
-                model.num_classes = len(labels[0])
+                model.num_classes = batch['num_classes'] # need to be known earlier!!!
                 if len(images) != 0:
                     # code.interact(local=locals())
                     # sess.run(model.aaaNetwork, feed_dict={model.input_var:images})
