@@ -58,10 +58,17 @@ def main(args):
     buckets = []
     # batch_groups = []
     i = 0
+    max_num_tokens = 0
     #for bucket in buckets:
     #	batch_groups.append(('batch' + str(i) + '.npz', [], []))
     #	i = i + 1
     with open(data_path) as fin:
+        for line in fin:
+            image_name, line_idx = line.strip().split()
+            line_strip = formulas[int(line_idx)].strip()
+            tokens = line_strip.split()
+            if len(tokens) > max_num_tokens:
+                max_num_tokens = len(tokens)
         for line in fin:
             #print('buckets')
             #print(len(buckets))
@@ -70,7 +77,7 @@ def main(args):
             image_name, line_idx = line.strip().split()
             line_strip = formulas[int(line_idx)].strip()
             tokens = line_strip.split()
-            label = np.full(150,len(vocabulary)) # 150 richtige wahl???
+            label = np.full(max_num_tokens,len(vocabulary)) # 150 richtige wahl???
             k = 0
             for token in tokens:
             	if token in vocabulary: # was sonst???
