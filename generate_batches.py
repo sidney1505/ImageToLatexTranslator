@@ -62,18 +62,21 @@ def main(args):
     #for bucket in buckets:
     #	batch_groups.append(('batch' + str(i) + '.npz', [], []))
     #	i = i + 1
+    #print('hi')
     with open(data_path) as fin:
         for line in fin:
+            #print('hi')
             image_name, line_idx = line.strip().split()
             line_strip = formulas[int(line_idx)].strip()
             tokens = line_strip.split()
             if len(tokens) > max_num_tokens:
                 max_num_tokens = len(tokens)
+    with open(data_path) as fin:
+        x = 0
         for line in fin:
             #print('buckets')
             #print(len(buckets))
             #print('i')
-            #print(i)
             image_name, line_idx = line.strip().split()
             line_strip = formulas[int(line_idx)].strip()
             tokens = line_strip.split()
