@@ -6,7 +6,7 @@ from tflearn.layers.conv import conv_2d, max_pool_2d
 from tflearn.layers.estimator import regression
 
 class Model:
-    def __init__(self,  num_classes, max_num_tokens, batchsize=5, learning_rate=0.00001, num_features=512, nr_epochs=1):
+    def __init__(self,  num_classes, max_num_tokens, batchsize=5, learning_rate=0.00001, num_features=512, nr_epochs=50):
         self.num_classes = num_classes
         self.max_num_tokens = max_num_tokens
         self.batchsize = batchsize

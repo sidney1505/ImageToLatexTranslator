@@ -1,6 +1,7 @@
 import sys, os, argparse, logging
 import numpy as np
 import code
+import shutil
 # from model.model import Model
 import tensorflow as tf
 import tflearn
@@ -12,13 +13,13 @@ from models.wysiwyg import Model
 def process_args(args):
     parser = argparse.ArgumentParser(description='description')
     parser.add_argument('--phase', dest='phase',
-                        type=str, default='prediction',
+                        type=str, default='training',
                         help=('Directory containing processed images.'))
     parser.add_argument('--batch-dir', dest='batch_dir',
                         type=str, required=True,
                         help=('path where the batches are stored'))
     parser.add_argument('--batch-size', dest='batch_size',
-                        type=str, default=2,
+                        type=str, default=1,
                         help=('size of the minibatches'))
     parameters = parser.parse_args(args)
     return parameters
@@ -49,17 +50,18 @@ def main(args):
         for i in range(model.nr_epochs):
             k = 0
             for batchfile in batchfiles: # randomise!!!
-                if k < 0:
-                    k = k + 1
-                    continue             
                 print('load ' + batchfile + '!')
                 batch = np.load(batch_dir + '/' + batchfile)
                 images = batch['images']
+                if images.shape[1] * images.shape[2] > 50000:
+                    k = k + 1
+                    continue             
                 labels = batch['labels']
+                print(images.shape)
                 assert len(images) == len(labels) != 0                
                 for j in range(len(images) / model.batchsize):
-                    if j > len(images) / model.batchsize - 2:
-                        break
+                    #if j > len(images) / model.batchsize - 2:
+                    #    break
                     print('batch(' + str(k) + ',' + str(j*model.batchsize) + '):')
                     print(images.shape)
                     imgs = []
@@ -72,9 +74,14 @@ def main(args):
                     # code.interact(local=locals())
                     feed_dict={model.images_placeholder: imgs, labels_placeholder: labs}
                     if phase == "training":
-                        _, loss_value, network = sess.run([train_op, loss, model.network], feed_dict=feed_dict)
-                        print(network.shape)
+                        _, loss_value = sess.run([train_op, loss], feed_dict=feed_dict)
                         print(loss_value)
+                        if j == 0:
+                            shutil.rmtree('logs', ignore_errors=True)
+                            if not os.path.exists('logs'):
+                                os.makedirs('logs')
+                            with open('logs/log_'+str(i)+'_'+str(k), 'w') as fout:
+                                np.savez(fout,loss_value)
                     elif phase == "prediction":
                         network = sess.run(model.network, feed_dict=feed_dict)
                         print(network.shape)
