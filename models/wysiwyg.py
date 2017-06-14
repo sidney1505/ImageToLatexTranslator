@@ -6,20 +6,22 @@ from tflearn.layers.conv import conv_2d, max_pool_2d
 from tflearn.layers.estimator import regression
 
 class Model:
-    def __init__(self, batchsize):
-        self.num_classes = 200
-        self.num_features = 100
-        self.nr_epochs = 1
+    def __init__(self,  num_classes, max_num_tokens, batchsize=5, learning_rate=0.00001, num_features=512, nr_epochs=1):
+        self.num_classes = num_classes
+        self.max_num_tokens = max_num_tokens
         self.batchsize = batchsize
-        # H,W,batchsize, was bedeutet input_data???
-        network = tflearn.layers.core.input_data(shape=[None, None, None, 1])
-        self.input_var = network
-        # How do I test parts of the network??
-        network = self.createCNNModel(network)
+        self.learning_rate = learning_rate
+        self.num_features = num_features
+        self.nr_epochs = nr_epochs
+
+        #network = tflearn.layers.core.input_data(shape=[None, None, None, 1])
+        #self.input_var = network
+        self.images_placeholder = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
+        network = self.createCNNModel(self.images_placeholder)
         network, self.num_features = self.createEncoderLSTM(network)
         network = self.createDecoderLSTM(network)
-
-        self.model = tflearn.DNN(network)
+        self.network = network
+        #self.model = tflearn.DNN(network)
 
     def fit(self, batch):
         self.model.fit(batch['images'], batch['labels'], self.nr_epochs, self.batchsize)
@@ -43,7 +45,7 @@ class Model:
 
         network = conv_2d(network, 512, 3, activation='relu')
         network = tflearn.layers.normalization.batch_normalization(network) #same as torch?
-
+        #network = tf.Print(network,[tf.shape(network)],"after cnn: ")
         return network
 
     def createEncoderLSTM(self, network):
@@ -56,8 +58,11 @@ class Model:
         bw_state = rnncell_bw.zero_state(batch_size=batchsize, dtype=tf.float32)
         l = tf.TensorArray(dtype=tf.float32, size=tf.shape(network)[0])
         params = [tf.constant(0), network, l, fw_state, bw_state]
-        while_condition = lambda i, network, l, fw_state, bw_state: tf.less(i, tf.shape(network)[0])
+        rows = tf.shape(network)[0]
+        #rows = tf.Print(rows,[rows],"row count: ")
+        while_condition = lambda i, network, l, fw_state, bw_state: tf.less(i, rows)
         def body(i, network, l, fw_state, bw_state):
+            #i = tf.Print(i,[i],"row: ")
             outputs, output_states = tf.nn.bidirectional_dynamic_rnn(rnncell_fw, rnncell_bw, network[i], initial_state_fw=fw_state,initial_state_bw=bw_state) #,dtype=tf.float32)
             fw_state, bw_state = output_states
             # code.interact(local=locals())
@@ -65,15 +70,16 @@ class Model:
             return [tf.add(i, 1), network, l, fw_state, bw_state]
         i, network, l, fw_state, bw_state = tf.while_loop(while_condition, body, params)
         network = l.stack()
+        #network = tf.Print(network,[tf.shape(network)],"in encoder: ")
         network = tf.transpose(network, perm=[2,0,3,1,4])
         s = tf.shape(network)
         # code.interact(local=locals())
         num_features = (network.shape[3] * network.shape[4]).value # other solution???
         network = tf.reshape(network, [s[0],s[1],s[2],s[3]*s[4]])
+        #network = tf.Print(network,[tf.shape(network)],"after encoder: ")
         return network, num_features #
 
     def createDecoderLSTM(self, network):
-        # num_classes = 200 # class variable!!!
         shape = tf.Print(tf.shape(network),[tf.shape(network)],"dynamic network shape from decoder input!!!!!!",1)
         dim_beta = 50 # hyperparameter!!!
         dim_h = 512 # hyperparameter!!!
@@ -82,14 +88,11 @@ class Model:
         dim_o = self.num_features + dim_h
         # the used rnncell
         rnncell = tf.contrib.rnn.LSTMCell(256, state_is_tuple=False, reuse=None) #size is hyperparamter!!!
-        # used variables
+        # used weight variables
         beta = tf.Variable(tf.random_normal([dim_beta])) # size is hyperparamter!!!
         w1 = tf.Variable(tf.random_normal([dim_beta, dim_h])) # dim_beta x dim_h
-        # 
         w2 = tf.Variable(tf.random_normal([self.num_features, dim_beta])) # num_features x dim_beta
-        # weight
         wc = tf.Variable(tf.random_normal([dim_o])) # (num_features + dim_h) (x hyperparam) ??? (= dim_o) ???
-        # weight
         wout = tf.Variable(tf.random_normal([self.num_classes, dim_o])) # num_classes x dim_o
         # initial states, ebenfalls Variablen???
         h0 = tf.zeros([batchsize,dim_h]) # 
@@ -98,38 +101,88 @@ class Model:
         # brings network in shape for element wise multiplikation
         network_ = tf.expand_dims(network,4)
         # create necessaties for the while-loop
-        l = tf.TensorArray(dtype=tf.float32, size=80)
+        l = tf.TensorArray(dtype=tf.float32, size=self.max_num_tokens)
         params = [tf.constant(0), network, l, h0, y0, o0, beta, network_, w1, w2]
-        while_condition = lambda t, network, l, h, y, o, beta, network_, w1, w2: tf.less(t, tf.constant(80)) # token embedding??
+        tmax = tf.constant(self.max_num_tokens)
+        #tmax = tf.Print(tmax,[tmax],"tmax =============================")
+        def while_condition(t, network, l, h, y, o, beta, network_, w1, w2):
+        	#t = tf.Print(t,[t],"twhile =============================")
+        	return tf.less(t, tmax) # token embedding??
         def body(t, network, l, h, y, o, beta, network_, w1, w2):
-            #t = tf.Print(t,[t],"t =============================")
-            #beta = tf.Print(beta,[tf.shape(beta)],"beta!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            #network_ = tf.Print(network_,[tf.shape(network_)],"network_!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            #w2 = tf.Print(w2,[tf.shape(w2)],"w2!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            #h = tf.Print(h,[tf.shape(h)],"h!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            #w1 = tf.Print(w1,[tf.shape(w1)],"w1!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+#        	cond = lambda t: tf.equal(t,tf.constant(9))
+#        	def aaa(t, network, l, h, y, o, beta, network_, w1, w2):
+#            	t = tf.add(t, 1)
+#            	t = tf.Print(t,[t],"tnew =============================")
+#            	return [t, network, l, h, y, o, beta, network_, w1, w2]
+#        	#def bbb(t, network, l, h, y, o, beta, network_, w1, w2):
+            #t = tf.Print(t,[t],"t0 =============================")
             hdotw1 = tf.tensordot(h,w1,[[1],[1]])
             hdotw1 = tf.expand_dims(hdotw1,1)
             hdotw1 = tf.expand_dims(hdotw1,1)
             hdotw1 = tf.expand_dims(hdotw1,1)
             e = tf.tensordot(beta,tf.tanh(hdotw1 + w2 * network_),[[0],[4]]) # batchsize x height x width x num_features # shapes angleichen?? batches??
+            #e = tf.Print(e,[tf.shape(e)],"e =============================")
+            #t = tf.Print(t,[t],"t1 =============================")
             # code.interact(local=locals())
-            print(network_)
             alpha = tf.nn.softmax(e) # batchsize x height x width x num_features # zeilenweise normieren!!!
+            #alpha = tf.Print(alpha,[tf.shape(alpha)],"t =============================")
+            #t = tf.Print(t,[t],"t2 =============================")
             c = alpha * network
             c = tf.transpose(c, perm=[1,2,0,3]) # put rows and columns in front in order to sum over them
             # sums over rows
             c = tf.foldl(lambda a, x: a + x, c)
             # sums over columns
             c = tf.foldl(lambda a, x: a + x, c) # batchsize x num_features
+            #c = tf.Print(c,[tf.shape(c)],"c =============================")
+            #t = tf.Print(t,[t],"t3 =============================")
             oput,h = rnncell.__call__(tf.concat([y,o],1), h) # batchsize x dim_h  # cell state & input als parameter uebergeben!!!
+            #h = tf.Print(h,[tf.shape(h)],"h =============================")
+            #t = tf.Print(t,[t],"t4 =============================")
             # code.interact(local=locals())
             o = tf.tanh(wc * tf.concat([h,c],1)) # batchsize x dim_o
+            #o = tf.Print(o,[tf.shape(o)],"o =============================")
+            #t = tf.Print(t,[t],"t5 =============================")
             y = tf.nn.softmax(tf.tensordot(o,wout,[[1],[1]])) # batch_size x num_classes # zeilenweise normieren!!!
+            #y = tf.Print(y,[tf.shape(y)],"y =============================")
+            #t = tf.Print(t,[t],"t6 =============================")
             l = l.write(t, y)
-            return [tf.add(t, 1), network, l, h, y, o, beta, network_, w1, w2]
+            #t = tf.Print(t,[t],"t7 =============================")
+            t = tf.add(t, 1)
+            #t = tf.Print(t,[t],"tnew =============================")
+            return [t, network, l, h, y, o, beta, network_, w1, w2]
+            #return tf.cond(cond,aaa,bbb)
         t, network, l, h, y, o, beta, network_, w1, w2 = tf.while_loop(while_condition, body, params)
         #t = tf.Print(t,[t],"ttttttttttttttttttttttttttttend =============================",5)
         l = l.stack()
         l = tf.transpose(l, [1,0,2])
+        #l = tf.Print(l,[tf.shape(l)],"after decoder: ")
         return l
+
+    def loss(self, pred, labels):
+    	pred = tf.transpose(pred, [1,0,2])
+    	labels = tf.transpose(labels, [1,0])
+    	loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=pred)
+    	return tf.reduce_mean(loss)
+
+    def training(self, loss):
+		"""Sets up the training Ops.
+		Creates a summarizer to track the loss over time in TensorBoard.
+		Creates an optimizer and applies the gradients to all trainable variables.
+		The Op returned by this function is what must be passed to the
+		`sess.run()` call to cause the model to train.
+		Args:
+		loss: Loss tensor, from loss().
+		learning_rate: The learning rate to use for gradient descent.
+		Returns:
+		train_op: The Op for training.
+		"""
+		# Add a scalar summary for the snapshot loss.
+		#tf.summary.scalar('loss', loss)
+		# Create the gradient descent optimizer with the given learning rate.
+		optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
+		# Create a variable to track the global step.
+		#global_step = tf.Variable(0, name='global_step', trainable=False)
+		# Use the optimizer to apply the gradients that minimize the loss
+		# (and also increment the global step counter) as a single training step.
+		train_op = optimizer.minimize(loss) #, global_step=global_step)
+		return train_op

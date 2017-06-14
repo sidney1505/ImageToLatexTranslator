@@ -12,13 +12,13 @@ from models.wysiwyg import Model
 def process_args(args):
     parser = argparse.ArgumentParser(description='description')
     parser.add_argument('--phase', dest='phase',
-                        type=str, default='training',
+                        type=str, default='prediction',
                         help=('Directory containing processed images.'))
     parser.add_argument('--batch-dir', dest='batch_dir',
                         type=str, required=True,
                         help=('path where the batches are stored'))
     parser.add_argument('--batch-size', dest='batch_size',
-                        type=str, default=5,
+                        type=str, default=2,
                         help=('size of the minibatches'))
     parameters = parser.parse_args(args)
     return parameters
@@ -31,30 +31,55 @@ def main(args):
     assert os.path.exists(batch_dir), batch_dir
     batchfiles = os.listdir(batch_dir)
     batchsize = parameters.batch_size
-    model = Model(batchsize)
-    sess = tf.Session()
-    init_op = tf.global_variables_initializer()
-    sess.run(init_op)
-    if phase == "training": # epochs!!!
+    batch0 = np.load(batch_dir + '/batch0.npz')
+    num_classes = batch0['num_classes']
+    max_num_tokens = len(batch0['labels'][0])
+    with tf.Graph().as_default():
+        model = Model(num_classes, max_num_tokens, batchsize)
+        sess = tf.Session()
+        labels_placeholder = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])
+        # Add to the Graph the Ops for loss calculation.
+        loss = model.loss(model.network, labels_placeholder)
+        # Add to the Graph the Ops that calculate and apply gradients.
+        train_op = model.training(loss)
+        # Add the variable initializer Op.
+        init = tf.global_variables_initializer()
+        sess.run(init)
+        # broken = [(0,46),(0,47),(1,68),(1,69)]
         for i in range(model.nr_epochs):
+            k = 0
             for batchfile in batchfiles: # randomise!!!
+                if k < 0:
+                    k = k + 1
+                    continue             
                 print('load ' + batchfile + '!')
                 batch = np.load(batch_dir + '/' + batchfile)
                 images = batch['images']
                 labels = batch['labels']
-                model.num_classes = batch['num_classes'] # need to be known earlier!!!
-                if len(images) != 0:
+                assert len(images) == len(labels) != 0                
+                for j in range(len(images) / model.batchsize):
+                    if j > len(images) / model.batchsize - 2:
+                        break
+                    print('batch(' + str(k) + ',' + str(j*model.batchsize) + '):')
+                    print(images.shape)
+                    imgs = []
+                    labs = []
+                    for b in range(j*model.batchsize, min((j+1)*model.batchsize,len(images))):
+                        imgs.append(images[b])
+                        labs.append(labels[b])
+                    imgs = np.array(imgs)
+                    labs = np.array(labs)
                     # code.interact(local=locals())
-                    # sess.run(model.aaaNetwork, feed_dict={model.input_var:images})
-                    for j in range(len(images)):
-                        print(images.shape)
-                        # code.interact(local=locals())
-                        pred = np.array(model.model.predict(np.take(images,range(i,min(len(images)-1,i+model.batchsize)),axis=0)))
-                        print(pred.shape)
-                    # print(model.aaa)
-                    #sess.run(model.aaa, feed_dict={model.input_var:images})
-                # model.fit(batch) 
-    sess.close()           
+                    feed_dict={model.images_placeholder: imgs, labels_placeholder: labs}
+                    if phase == "training":
+                        _, loss_value, network = sess.run([train_op, loss, model.network], feed_dict=feed_dict)
+                        print(network.shape)
+                        print(loss_value)
+                    elif phase == "prediction":
+                        network = sess.run(model.network, feed_dict=feed_dict)
+                        print(network.shape)
+                k = k + 1
+        sess.close()        
 
 if __name__ == '__main__':
     main(sys.argv[1:])
