@@ -1,20 +1,10 @@
-import os
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn import linear_model
-logs = {}
-for log in os.listdir('.'):
-    a,b = log[4:-4].split('_')
-    val = np.load(log)['val']
-    logs.update({(int(a),int(b)):float(val)})
-
-skeys = sorted(logs.keys())
-vals = []
-for key in skeys:
-	print(key)
-	print(logs[key])
-	vals.append(logs[key])
-
+vals = range(10)
+vals[4] = vals[4] + 2
+vals[7] = vals[7] - 1
+vals[2] = vals[2] - 1
 x = range(len(vals))
 plt.plot(x, vals, color='blue')
 x = np.expand_dims(np.array(x),1)

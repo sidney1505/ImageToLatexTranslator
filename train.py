@@ -66,6 +66,7 @@ def main(args):
     val_j = 0
     val_imgs = []
     val_labs = []
+    val_losses = []
     # the directory where the models are stored
     store_dir = parameters.store_dir
     if not os.path.exists(store_dir):
@@ -89,6 +90,7 @@ def main(args):
         count = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
         print(count)
         for i in range(model.nr_epochs):
+            val_loss_list = []
             k = 0
             for batchfile in batchfiles: # randomise!!!
                 print('load ' + batchfile + '!')
@@ -134,6 +136,7 @@ def main(args):
                             val_labs = np.array(val_labs)
                             val_feed_dict={model.images_placeholder: val_imgs, labels_placeholder: val_labs}
                             val_loss_value = sess.run(loss, feed_dict=val_feed_dict)
+                            val_loss_list.append(val_loss_value)
                             model.addValidationLog(val_loss_value, i, k)
                             val_j = val_j + 1
                             if (val_j + 1) * val_minibatchsize > len(val_images):
@@ -158,7 +161,10 @@ def main(args):
                         network = sess.run(model.network, feed_dict=feed_dict)
                         print(network.shape)
                 k = k + 1
-            model.learning_rate = model.learning_rate * 0.5
+            val_losses.append(np.mean(val_loss_list))
+            if len(val_losses) > 1 and val_losses[-2] <= val_losses[-1]:
+                print('decrease learning rate!')
+                model.learning_rate = model.learning_rate * 0.5
             model.save(sess)
         sess.close()        
 

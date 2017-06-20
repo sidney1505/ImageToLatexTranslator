@@ -1,5 +1,6 @@
 import code
 import os
+import shutil
 import tensorflow as tf
 import tflearn
 import numpy as np
@@ -8,7 +9,7 @@ from tflearn.layers.conv import conv_2d, max_pool_2d
 from tflearn.layers.estimator import regression
 
 class Model:
-    def __init__(self,  num_classes, max_num_tokens, minibatchsize=5, learning_rate=0.001, num_features=512, nr_epochs=50, model_dir=''):
+    def __init__(self,  num_classes, max_num_tokens, minibatchsize=5, learning_rate=0.1, num_features=512, nr_epochs=50, model_dir=''):
         # intialise class variables
         self.num_classes = num_classes
         self.max_num_tokens = max_num_tokens
@@ -177,7 +178,7 @@ class Model:
         return tf.reduce_mean(loss)
 
     def training(self, loss):
-        optimizer = tf.train.AdamOptimizer(self.learning_rate)
+        optimizer = tf.train.MomentumOptimizer(self.learning_rate,0.9)
         train_op = optimizer.minimize(loss) #, global_step=global_step)
         return train_op
 
@@ -190,6 +191,8 @@ class Model:
             np.savez(fout,val=np.mean(loss_value))
 
     def save(self, sess):
+        shutil.rmtree(self.param_path, ignore_errors=True)
+        if not os.path.exists(self.param_path):
+            with open(self.param_path, 'w') as fout:
+                np.savez(fout, num_classes=num_classes, max_num_tokens=max_num_tokens, minibatchsize=minibatchsize, learning_rate=learning_rate, num_features=num_features, nr_epochs=nr_epochs, model_dir=model_dir)
         self.saver.save(sess, self.save_path)
-
-    def load(model_path):
