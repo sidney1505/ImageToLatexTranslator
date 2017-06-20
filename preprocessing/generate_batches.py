@@ -80,41 +80,41 @@ def main(args):
             label = np.full(max_num_tokens,num_classes-1) # !!!
             k = 0
             for token in tokens:
-            	if token in vocabulary:
-            		label[k] = vocabulary.index(token)
-            	k = k + 1
+                if token in vocabulary:
+                    label[k] = vocabulary.index(token)
+                k = k + 1
             image = Image.open(image_dir + '/' + image_name)
             pixr = np.array(image) # rgb wanted???
             h,w,_ = pixr.shape
             pix = np.zeros((h,w,1))
             for n in range(0,h):
-            	for j in range(0,w):
-            		pix[n][j][0] = pixr[n][j][0] # reduce to one channel
+                for j in range(0,w):
+                    pix[n][j][0] = pixr[n][j][0] # reduce to one channel
             pix = (pix - 128) / 128 # normalization
             j = 0
             b = len(buckets)
             for bucket in buckets:
-            	if pix.shape == bucket[1][0].shape: # buckets can't be empty           		
-            		b = j
-            		break
-            	j = j + 1
+                if pix.shape == bucket[1][0].shape: # buckets can't be empty                
+                    b = j
+                    break
+                j = j + 1
             if b != len(buckets): # was tuen falls doch???
-            	name, pixs, labels = buckets[b]
-            	pixs.append(pix)
-            	labels.append(label)
-            	if len(pixs) >= 1000: # 1000 optimale wahl???
-            		with open(output_path + "/" + name, 'w') as fout:
-    					np.savez(fout, images=np.array(pixs), labels=np.array(labels), num_classes=num_classes)
+                name, pixs, labels = buckets[b]
+                pixs.append(pix)
+                labels.append(label)
+                if len(pixs) >= 1000: # 1000 optimale wahl???
+                    with open(output_path + "/" + name, 'w') as fout:
+                        np.savez(fout, images=np.array(pixs), labels=np.array(labels), num_classes=num_classes)
                         print(name + ' saved!')
-            		buckets.pop(b)
-            	else:
-            		buckets[b] = (name, pixs, labels)
+                    buckets.pop(b)
+                else:
+                    buckets[b] = (name, pixs, labels)
             else:
                 buckets.append(('batch' + str(i) + '.npz', [pix], [label]))
                 i = i + 1
     for batch in buckets:
-    	name, pixs, labels = batch 
-    	with open(output_path + "/" + name, 'w') as fout:
+        name, pixs, labels = batch 
+        with open(output_path + "/" + name, 'w') as fout:
             np.savez(fout, images=np.array(pixs), labels=np.array(labels), num_classes=num_classes)
             print(name + ' saved!')
     print(num_classes)

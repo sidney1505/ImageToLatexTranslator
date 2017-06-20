@@ -1,30 +1,42 @@
 import code
+import os
 import tensorflow as tf
 import tflearn
+import numpy as np
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.conv import conv_2d, max_pool_2d
 from tflearn.layers.estimator import regression
 
 class Model:
-    def __init__(self,  num_classes, max_num_tokens, batchsize=5, learning_rate=0.00001, num_features=512, nr_epochs=50):
+    def __init__(self,  num_classes, max_num_tokens, minibatchsize=5, learning_rate=0.001, num_features=512, nr_epochs=50, model_dir=''):
+        # intialise class variables
         self.num_classes = num_classes
         self.max_num_tokens = max_num_tokens
-        self.batchsize = batchsize
+        self.minibatchsize = minibatchsize
         self.learning_rate = learning_rate
         self.num_features = num_features
         self.nr_epochs = nr_epochs
-
-        #network = tflearn.layers.core.input_data(shape=[None, None, None, 1])
-        #self.input_var = network
+        # create the network graph
         self.images_placeholder = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
         network = self.createCNNModel(self.images_placeholder)
         network, self.num_features = self.createEncoderLSTM(network)
         network = self.createDecoderLSTM(network)
         self.network = network
-        #self.model = tflearn.DNN(network)
+        # save the model
+        self.model_dir = model_dir
+        self.train_logs = self.model_dir + '/train_logs'
+        if not os.path.exists(self.train_logs):
+            os.makedirs(self.train_logs)
+        self.validation_logs = self.model_dir + '/validation_logs'
+        if not os.path.exists(self.validation_logs):
+            os.makedirs(self.validation_logs)
+        self.save_path = self.model_dir + '/weights.cpk'
+        self.param_path = self.model_dir + '/params.npz'
+        if not os.path.exists(self.param_path):
+            with open(self.param_path, 'w') as fout:
+                np.savez(fout, num_classes=num_classes, max_num_tokens=max_num_tokens, minibatchsize=minibatchsize, learning_rate=learning_rate, num_features=num_features, nr_epochs=nr_epochs, model_dir=model_dir)
+        self.saver = tf.train.Saver()
 
-    def fit(self, batch):
-        self.model.fit(batch['images'], batch['labels'], self.nr_epochs, self.batchsize)
 
     def createCNNModel(self, network):
         network = tflearn.layers.conv.conv_2d(network, 64, 3, activation='relu') # padding???
@@ -106,15 +118,15 @@ class Model:
         tmax = tf.constant(self.max_num_tokens)
         #tmax = tf.Print(tmax,[tmax],"tmax =============================")
         def while_condition(t, network, l, h, y, o, beta, network_, w1, w2):
-        	#t = tf.Print(t,[t],"twhile =============================")
-        	return tf.less(t, tmax) # token embedding??
+            #t = tf.Print(t,[t],"twhile =============================")
+            return tf.less(t, tmax) # token embedding??
         def body(t, network, l, h, y, o, beta, network_, w1, w2):
-#        	cond = lambda t: tf.equal(t,tf.constant(9))
-#        	def aaa(t, network, l, h, y, o, beta, network_, w1, w2):
-#            	t = tf.add(t, 1)
-#            	t = tf.Print(t,[t],"tnew =============================")
-#            	return [t, network, l, h, y, o, beta, network_, w1, w2]
-#        	#def bbb(t, network, l, h, y, o, beta, network_, w1, w2):
+#            cond = lambda t: tf.equal(t,tf.constant(9))
+#            def aaa(t, network, l, h, y, o, beta, network_, w1, w2):
+#                t = tf.add(t, 1)
+#                t = tf.Print(t,[t],"tnew =============================")
+#                return [t, network, l, h, y, o, beta, network_, w1, w2]
+#            #def bbb(t, network, l, h, y, o, beta, network_, w1, w2):
             #t = tf.Print(t,[t],"t0 =============================")
             hdotw1 = tf.tensordot(h,w1,[[1],[1]])
             hdotw1 = tf.expand_dims(hdotw1,1)
@@ -159,30 +171,25 @@ class Model:
         return l
 
     def loss(self, pred, labels):
-    	pred = tf.transpose(pred, [1,0,2])
-    	labels = tf.transpose(labels, [1,0])
-    	loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=pred)
-    	return tf.reduce_mean(loss)
+        pred = tf.transpose(pred, [1,0,2])
+        labels = tf.transpose(labels, [1,0])
+        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=pred)
+        return tf.reduce_mean(loss)
 
     def training(self, loss):
-		"""Sets up the training Ops.
-		Creates a summarizer to track the loss over time in TensorBoard.
-		Creates an optimizer and applies the gradients to all trainable variables.
-		The Op returned by this function is what must be passed to the
-		`sess.run()` call to cause the model to train.
-		Args:
-		loss: Loss tensor, from loss().
-		learning_rate: The learning rate to use for gradient descent.
-		Returns:
-		train_op: The Op for training.
-		"""
-		# Add a scalar summary for the snapshot loss.
-		#tf.summary.scalar('loss', loss)
-		# Create the gradient descent optimizer with the given learning rate.
-		optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
-		# Create a variable to track the global step.
-		#global_step = tf.Variable(0, name='global_step', trainable=False)
-		# Use the optimizer to apply the gradients that minimize the loss
-		# (and also increment the global step counter) as a single training step.
-		train_op = optimizer.minimize(loss) #, global_step=global_step)
-		return train_op
+        optimizer = tf.train.AdamOptimizer(self.learning_rate)
+        train_op = optimizer.minimize(loss) #, global_step=global_step)
+        return train_op
+
+    def addTrainLog(self, loss_value, epoch, batch):
+        with open(self.train_logs+'/log_'+str(epoch)+'_'+str(batch)+'.npz', 'w') as fout:
+            np.savez(fout,val=np.mean(loss_value))
+
+    def addValidationLog(self, loss_value, epoch, batch):
+        with open(self.validation_logs+'/log_'+str(epoch)+'_'+str(batch)+'.npz', 'w') as fout:
+            np.savez(fout,val=np.mean(loss_value))
+
+    def save(self, sess):
+        self.saver.save(sess, self.save_path)
+
+    def load(model_path):
