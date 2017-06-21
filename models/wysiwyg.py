@@ -9,7 +9,7 @@ from tflearn.layers.conv import conv_2d, max_pool_2d
 from tflearn.layers.estimator import regression
 
 class Model:
-    def __init__(self,  num_classes, max_num_tokens, minibatchsize=5, learning_rate=0.1, num_features=512, nr_epochs=50, model_dir=''):
+    def __init__(self,  num_classes, max_num_tokens, minibatchsize=50000, learning_rate=0.1, num_features=512, nr_epochs=50, model_dir=''):
         # intialise class variables
         self.num_classes = num_classes
         self.max_num_tokens = max_num_tokens
@@ -194,5 +194,18 @@ class Model:
         shutil.rmtree(self.param_path, ignore_errors=True)
         if not os.path.exists(self.param_path):
             with open(self.param_path, 'w') as fout:
-                np.savez(fout, num_classes=num_classes, max_num_tokens=max_num_tokens, minibatchsize=minibatchsize, learning_rate=learning_rate, num_features=num_features, nr_epochs=nr_epochs, model_dir=model_dir)
+                np.savez(fout, num_classes=self.num_classes, max_num_tokens=self.max_num_tokens, minibatchsize=self.minibatchsize, learning_rate=self.learning_rate, num_features=self.num_features, nr_epochs=self.nr_epochs, model_dir=self.model_dir)
         self.saver.save(sess, self.save_path)
+
+def load(model_path, sess):
+    params = np.load(model_path + '/params.npz')
+    num_classes = np.asscalar(params['num_classes'])
+    max_num_tokens = np.asscalar(params['max_num_tokens'])
+    minibatchsize = np.asscalar(params['minibatchsize'])
+    learning_rate = np.asscalar(params['learning_rate'])
+    num_features = np.asscalar(params['num_features'])
+    nr_epochs = np.asscalar(params['nr_epochs'])
+    model_dir = np.asscalar(params['model_dir'])
+    model = Model(num_classes, max_num_tokens, minibatchsize, learning_rate, num_features, nr_epochs, model_dir)
+    model.saver.restore(sess, model.save_path)
+    return model
