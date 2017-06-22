@@ -78,10 +78,12 @@ def main(args):
             tokens = line_strip.split()
             num_classes = len(vocabulary)+1
             label = np.full(max_num_tokens,num_classes-1) # !!!
+            contained_classes = np.zeros(num_classes)
             k = 0
             for token in tokens:
                 if token in vocabulary:
                     label[k] = vocabulary.index(token)
+                    contained_classes[label[k]] = 1
                 k = k + 1
             image = Image.open(image_dir + '/' + image_name)
             pixr = np.array(image) # rgb wanted???
@@ -99,23 +101,24 @@ def main(args):
                     break
                 j = j + 1
             if b != len(buckets): # was tuen falls doch???
-                name, pixs, labels = buckets[b]
+                name, pixs, labels, contained_classes_list = buckets[b]
                 pixs.append(pix)
                 labels.append(label)
+                contained_classes_list.append(np.array(contained_classes))
                 if len(pixs) >= 1000: # 1000 optimale wahl???
                     with open(output_path + "/" + name, 'w') as fout:
-                        np.savez(fout, images=np.array(pixs), labels=np.array(labels), num_classes=num_classes)
+                        np.savez(fout, images=np.array(pixs), labels=np.array(labels), num_classes=num_classes, contained_classes_list=contained_classes_list)
                         print(name + ' saved!')
                     buckets.pop(b)
                 else:
-                    buckets[b] = (name, pixs, labels)
+                    buckets[b] = (name, pixs, labels, contained_classes_list)
             else:
-                buckets.append(('batch' + str(i) + '.npz', [pix], [label]))
+                buckets.append(('batch' + str(i) + '.npz', [pix], [label], [contained_classes]))
                 i = i + 1
     for batch in buckets:
-        name, pixs, labels = batch 
+        name, pixs, labels, contained_classes_list = batch 
         with open(output_path + "/" + name, 'w') as fout:
-            np.savez(fout, images=np.array(pixs), labels=np.array(labels), num_classes=num_classes)
+            np.savez(fout, images=np.array(pixs), labels=np.array(labels), num_classes=num_classes, contained_classes_list=contained_classes_list)
             print(name + ' saved!')
     print(num_classes)
 

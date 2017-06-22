@@ -20,8 +20,6 @@ class Model:
         # create the network graph
         self.images_placeholder = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
         network = self.createCNNModel(self.images_placeholder)
-        network, self.num_features = self.createEncoderLSTM(network)
-        network = self.createDecoderLSTM(network)
         self.network = network
         # save the model
         self.model_dir = model_dir
@@ -39,40 +37,65 @@ class Model:
         self.saver = tf.train.Saver()
         self.weights = {
             # 5x5 conv, 1 input, 32 outputs
-            'wconv1': tf.Variable(tf.random_normal([3, 3, 1, 64])),
+            'wconv1': tf.Variable(tf.random_normal([3, 3, 1, 64]), name='wconv1'),
+            'bconv1': tf.Variable(tf.random_normal([64]), name='bconv1'),
             # 5x5 conv, 32 inputs, 64 outputs
-            'wconv2': tf.Variable(tf.random_normal([3, 3, 64, 128])),
+            'wconv2': tf.Variable(tf.random_normal([3, 3, 64, 128]), name='wconv2'),
+            'bconv2': tf.Variable(tf.random_normal([128]), name='bconv2'),
             # 5x5 conv, 1 input, 32 outputs
-            'wconv3': tf.Variable(tf.random_normal([3, 3, 128, 256])),
+            'wconv3': tf.Variable(tf.random_normal([3, 3, 128, 256]), name='wconv3'),
+            'bconv3': tf.Variable(tf.random_normal([256]), name='bconv3'),
             # 5x5 conv, 32 inputs, 64 outputs
-            'wconv4': tf.Variable(tf.random_normal([3, 3, 256, 128])),
+            'wconv4': tf.Variable(tf.random_normal([3, 3, 256, 256]), name='wconv4'),
+            'bconv4': tf.Variable(tf.random_normal([256]), name='bconv4'),
             # 5x5 conv, 1 input, 32 outputs
-            'wconv5': tf.Variable(tf.random_normal([3, 3, 1, 64])),
+            'wconv5': tf.Variable(tf.random_normal([3, 3, 256, 512]), name='wconv5'),
+            'bconv5': tf.Variable(tf.random_normal([512]), name='bconv5'),
             # 5x5 conv, 32 inputs, 64 outputs
-            'wconv6': tf.Variable(tf.random_normal([3, 3, 32, 128])),
+            'wconv6': tf.Variable(tf.random_normal([3, 3, 512, 512]), name='wconv6'),
+            'bconv6': tf.Variable(tf.random_normal([512]), name='bconv6'),
+            # 5x5 conv, 32 inputs, 64 outputs
+            'wfc': tf.Variable(tf.random_normal([512,self.num_classes]), name='wfc'),
+            'bfc': tf.Variable(tf.random_normal([self.num_classes]), name='bfc'),
         }
 
 
     def createCNNModel(self, network):
-        network = tflearn.layers.conv.conv_2d(network, 64, 3, activation='relu') # padding???
-        network = tf.nn.max_pool_2d(network, 2, strides=2)
+        network = tf.nn.conv_2d(network, self.weights['wconv1'], strides=[1,1,1,1], padding='SAME')
+        network = tf.nn.bias_add(network, self.weights['bconv1'])
+        network = tf.nn.max_pool_2d(network, 2, strides=2, padding=2)
+        network = tf.nn.relu(network)
 
-        network = conv_2d(network, 128, 3, activation='relu')
-        network = tf.nn.max_pool_2d(network, 2, strides=2)
+        network = tf.nn.conv_2d(network, self.weights['wconv2'], strides=[1,1,1,1], padding='SAME')
+        network = tf.nn.bias_add(network, self.weights['bconv2'])
+        network = tf.nn.max_pool_2d(network, 2, strides=2, padding=0)
+        network = tf.nn.relu(network)
 
-        network = conv_2d(network, 256, 3, activation='relu')
+        network = tf.nn.conv_2d(network, self.weights['wconv3'], strides=[1,1,1,1], padding='SAME')
+        network = tf.nn.bias_add(network, self.weights['bconv3'])
         network = tflearn.layers.normalization.batch_normalization(network) #same as torch?
+        network = tf.nn.relu(network)
 
-        network = conv_2d(network, 256, 3, activation='relu')
-        network = tf.nn.max_pool_2d(network, [1,2], strides=2)
+        network = tf.nn.conv_2d(network, self.weights['wconv4'], strides=[1,1,1,1], padding='SAME')
+        network = tf.nn.bias_add(network, self.weights['bconv4'])
+        network = tf.nn.max_pool_2d(network, [2,1], strides=[2,1])
+        network = tf.nn.relu(network)
 
-        network = conv_2d(network, 512, 3, activation='relu')
+        network = tf.nn.conv_2d(network, self.weights['wconv5'], strides=[1,1,1,1], padding='SAME')
+        network = tf.nn.bias_add(network, self.weights['bconv5'])
         network = tflearn.layers.normalization.batch_normalization(network) #same as torch?
-        network = tf.nn.max_pool_2d(network, [2,1], strides=2)
+        network = tf.nn.max_pool_2d(network, [1,2], strides=[1,2])
+        network = tf.nn.relu(network)
 
-        network = conv_2d(network, 512, 3, activation='relu')
-        network = tflearn.layers.normalization.batch_normalization(network) #same as torch?
-        #network = tf.Print(network,[tf.shape(network)],"after cnn: ")
+        network = tf.nn.conv_2d(network, self.weights['wconv6'], strides=[1,1,1,1], padding='SAME')
+        network = tf.nn.bias_add(network, self.weights['bconv6'])
+        network = tflearn.layers.normalization.batch_normalization(network)
+        network = tf.nn.relu(network)
+
+        network = tf.nn.max_pool_2d(network, [network.shape[1],network.shape[2]])
+        network = tf.squeeze(network)
+        network = tf.tensordot(network,self.weights['wfc'],[[1],[0]])
+        network = network + self.weights['wfb']
         return network
 
     def loss(self, pred, labels):

@@ -9,16 +9,13 @@ import tflearn
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.conv import conv_2d, max_pool_2d
 from tflearn.layers.estimator import regression
-from models.wysiwyg import Model
+from models.wysiwyg_pretraining import Model
 
 def process_args(args):
     parser = argparse.ArgumentParser(description='description')
     parser.add_argument('--phase', dest='phase',
                         type=str, default='training',
                         help=('Directory containing processed images.'))
-    parser.add_argument('--traintype', dest='traintype',
-                        type=str, default=1,
-                        help=('Type of the training/evaluation. 0 = normal, 1 = pretraining'))
     parser.add_argument('--batch-dir', dest='batch_dir',
                         type=str, required=True,
                         help=('path where the batches are stored'))
@@ -31,9 +28,6 @@ def process_args(args):
     parser.add_argument('--minibatchsize', dest='minibatchsize',
                         type=str, default=100000,
                         help=('size of the minibatches'))
-    parser.add_argument('--load-model', dest='load_model',
-                        type=str, default=False,
-                        help=('size of the minibatches'))
     parameters = parser.parse_args(args)
     return parameters
 
@@ -41,10 +35,6 @@ def main(args):
     parameters = process_args(args)
     # the phase, training or prediction, that is performed
     phase = parameters.phase
-    #
-    traintype = parameters.traintype
-    #
-    load_model = parameters.load_model
     # the directory, where the training batches are stored
     batch_dir = parameters.batch_dir
     assert os.path.exists(batch_dir), batch_dir
@@ -65,17 +55,14 @@ def main(args):
         val_batch = np.load(batch_dir + '/' + validation_batches[validation_batches_it])
         val_images = val_batch['images']
         val_k = 20
-        while val_images.shape[1] * val_images.shape[2] * val_k > 1000000:
+        while val_images.shape[1] * val_images.shape[2] * val_k > minibatchsize:
             val_k = val_k - 1
         val_minibatchsize = val_k
         if val_k != 0:
             break
         else:
             validation_batches_it = validation_batches_it + 1 % len(validation_batches)
-    if traintype == 0:
-        val_labels = val_batch['labels']
-    elif traintype == 1:
-        val_labels = val_batch['contained_classes_list']
+    val_labels = val_batch['labels']
     val_j = 0
     val_imgs = []
     val_labs = []
@@ -84,23 +71,18 @@ def main(args):
     store_dir = parameters.store_dir
     if not os.path.exists(store_dir):
         os.makedirs(store_dir)
-    model_dir = store_dir + '/model-' + str(datetime.datetime.now())
+    model_dir = store_dir + '/wysiwyg_pre-' + str(datetime.datetime.now())
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
     with tf.Graph().as_default():
         sess = tf.Session()
-        model = None
-        if load_model:
-            model = models.wysiwyg.load(model_path, sess)
-        else:
-            model = Model(num_classes, max_num_tokens, 0.01,model_dir=model_dir)
-        if traintype == 0:
-            labels_placeholder = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])
-            loss = model.loss(model.network, labels_placeholder)
-        elif traintype == 1:
-            labels_placeholder = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
-            loss = model.containedClassesLoss(model.containedClassesPrediction, labels_placeholder)
+        model = Model(num_classes, max_num_tokens, 0.01,model_dir=model_dir)
+        labels_placeholder = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])
+        # Add to the Graph the Ops for loss calculation.
+        loss = model.loss(model.network, labels_placeholder)
+        # Add to the Graph the Ops that calculate and apply gradients.
         train_op = model.training(loss)
+        # Add the variable initializer Op.
         init = tf.global_variables_initializer()
         sess.run(init)
         model.save(sess)
@@ -115,21 +97,14 @@ def main(args):
                 batch = np.load(batch_dir + '/' + batchfile)
                 images = batch['images']
                 train_k = 20
-                while images.shape[1] * images.shape[2] * train_k > 1000000:
+                while images.shape[1] * images.shape[2] * train_k > minibatchsize:
                     train_k = train_k - 1
                 if train_k == 0:
                     continue
                 model.minibatchsize = train_k
-                labels = None
-                #print('AAAAAAAAAAAAAaaaaaaaa')
-                #code.interact(local=locals())
-                if traintype == 0:
-                    labels = batch['labels']
-                    assert len(images) == len(labels) != 0
-                elif traintype == 1:
-                    labels = batch['contained_classes_list'] 
-                    labels = labels.astype(np.float32)
-                print(images.shape)               
+                labels = batch['labels']
+                print(images.shape)
+                assert len(images) == len(labels) != 0
                 losses = []
                 for j in range(len(images) / model.minibatchsize):
                     #if j > len(images) / model.batchsize - 2:
@@ -174,17 +149,14 @@ def main(args):
                                     val_batch = np.load(batch_dir + '/' + validation_batches[validation_batches_it])
                                     val_images = val_batch['images']
                                     val_k = 20
-                                    while val_images.shape[1] * val_images.shape[2] * val_k > 1000000:
+                                    while val_images.shape[1] * val_images.shape[2] * val_k > minibatchsize:
                                         val_k = val_k - 1
                                     val_minibatchsize = val_k
                                     if val_k != 0:
                                         break
                                     else:
                                         validation_batches_it = validation_batches_it + 1 % len(validation_batches)
-                                if traintype == 0:
-                                    val_labels = val_batch['labels']
-                                elif traintype == 1:
-                                    val_labels = val_batch['contained_classes_list']
+                                val_labels = batch['labels']                                
                     elif phase == "prediction":
                         network = sess.run(model.network, feed_dict=feed_dict)
                         print(network.shape)
