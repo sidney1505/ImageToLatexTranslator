@@ -16,8 +16,19 @@ import models.wysiwyg
 
 def process_args(args):
     parser = argparse.ArgumentParser(description='description')
-
-    parser.add_argument('--image-path', dest='image_path',
+    parser.add_argument('--image-dir', dest='image_dir',
+                        type=str, default='',
+                        help=('Directory containing processed images.'
+                        ))
+    parser.add_argument('--image-id', dest='image_id',
+                        type=str, default=0,
+                        help=('Directory containing processed images.'
+                        ))
+    parser.add_argument('--data-path', dest='data_path',
+                        type=str, default='',
+                        help=('Directory containing processed images.'
+                        ))
+    parser.add_argument('--label-path', dest='label_path',
                         type=str, default='',
                         help=('Directory containing processed images.'
                         ))
@@ -33,13 +44,18 @@ def process_args(args):
 
 def main(args):
     parameters = process_args(args)#
-    image_path = parameters.image_path
-    assert os.path.exists(image_path), image_path
-    image = np.array(Image.open(image_path))
-    #code.interact(local=locals())
-    image = np.transpose(np.array(image),[2,0,1])
-    image = image[0]
-    imgs = np.expand_dims(np.expand_dims(image,0),3)
+    # loads the connection between labels and the images
+    label_path = parameters.label_path
+    assert os.path.exists(label_path), label_path
+    formulas = open(label_path).readlines()
+    # loads the connection between labels and the images
+    data_path = parameters.data_path
+    assert os.path.exists(data_path), data_path
+    # loads the images
+    image_dir = parameters.image_dir
+    assert os.path.exists(image_dir), image_dir
+    # loads the image_id
+    image_id = int(parameters.image_id)
     #
     model_path = parameters.model_path
     assert os.path.exists(model_path), model_path
@@ -53,14 +69,34 @@ def main(args):
     with tf.Graph().as_default():
         sess = tf.Session()
         model = models.wysiwyg.load(model_path, sess)
+        with open(data_path) as fin:
+            #code.interact(local=locals())
+            lines = fin.readlines()
+            line = lines[image_id]
+            image_name, line_idx = line.strip().split()
+            line_strip = formulas[int(line_idx)].strip()
+            tokens = line_strip.split()
+            contained_classes = np.zeros(model.num_classes)
+            for token in tokens:
+                if token in vocabulary:
+                    contained_classes[vocabulary.index(token)] = 1
+            #
+            image_path = image_dir + '/' + image_name
+            image = np.array(Image.open(image_path))
+            image = np.transpose(np.array(image),[2,0,1])
+            image = image[0]
+            imgs = np.expand_dims(np.expand_dims(image,0),3)
         feed_dict={model.images_placeholder: imgs}
         pred = sess.run(model.containedClassesPrediction, feed_dict=feed_dict)
         pred = np.squeeze(pred)
         preds = {}
         for i in range(len(vocabulary)):
-            preds.update({pred[i]:vocabulary[i]})
+            preds.update({pred[i]:(contained_classes[i],vocabulary[i])})
         for key in sorted(preds):
-            print(str(key) + '  :  ' + preds[key])
+            ccs, voc =  preds[key]
+            print(str(key) + '  :  ' + str(ccs) + '  :  ' + voc)
+    print(image_name)
+    print(line_strip)
 
 
 

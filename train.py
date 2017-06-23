@@ -79,20 +79,20 @@ def main(args):
     val_j = 0
     val_imgs = []
     val_labs = []
-    val_losses = []
-    # the directory where the models are stored
-    store_dir = parameters.store_dir
-    if not os.path.exists(store_dir):
-        os.makedirs(store_dir)
-    model_dir = store_dir + '/model-' + str(datetime.datetime.now())
-    if not os.path.exists(model_dir):
-        os.makedirs(model_dir)
+    val_losses = []    
     with tf.Graph().as_default():
         sess = tf.Session()
         model = None
         if load_model:
             model = models.wysiwyg.load(model_path, sess)
         else:
+            # the directory where the models are stored
+            store_dir = parameters.store_dir
+            if not os.path.exists(store_dir):
+                os.makedirs(store_dir)
+            model_dir = store_dir + '/model-' + str(datetime.datetime.now())
+            if not os.path.exists(model_dir):
+                os.makedirs(model_dir)
             model = Model(num_classes, max_num_tokens, 0.01,model_dir=model_dir)
         if traintype == 0:
             labels_placeholder = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])

@@ -9,7 +9,7 @@ from tflearn.layers.conv import conv_2d, max_pool_2d
 from tflearn.layers.estimator import regression
 
 class Model:
-    def __init__(self,  num_classes, max_num_tokens, minibatchsize=30000, learning_rate=0.1, num_features=512, nr_epochs=50, model_dir=''):
+    def __init__(self,  num_classes, max_num_tokens, minibatchsize=30000, learning_rate=0.01, num_features=512, nr_epochs=50, model_dir=''):
         # intialise class variables
         self.num_classes = num_classes
         self.max_num_tokens = max_num_tokens
@@ -49,13 +49,18 @@ class Model:
             # 5x5 conv, 32 inputs, 64 outputs
             'wconv6': tf.Variable(tf.random_normal([3, 3, 512, 512]), name='wconv6'),
             'bconv6': tf.Variable(tf.random_normal([512]), name='bconv6'),
-            'wfc': tf.Variable(tf.random_normal([512,self.num_classes]), name='wfc'),
-            'bfc': tf.Variable(tf.random_normal([self.num_classes]), name='bfc'),
+            'wfc': tf.Variable(tf.random_normal([512,self.num_classes]), name='wfc1'),
+            'bfc': tf.Variable(tf.random_normal([self.num_classes]), name='bfc1'),
+            'wfc1': tf.Variable(tf.random_normal([512,1000]), name='wfc1'),
+            'bfc1': tf.Variable(tf.random_normal([1000]), name='bfc1'),
+            'wfc2': tf.Variable(tf.random_normal([1000,self.num_classes]), name='wfc2'),
+            'bfc2': tf.Variable(tf.random_normal([self.num_classes]), name='bfc2'),
         }
         # create the network graph
         self.images_placeholder = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
         network = self.createCNNModel(self.images_placeholder)
         self.containedClassesPrediction = self.createFullyConvolutional(network)
+        self.classes = tf.sigmoid(self.containedClassesPrediction)
         network, self.num_features = self.createEncoderLSTM(network)
         self.network = self.createDecoderLSTM(network)
         self.saver = tf.train.Saver()
@@ -95,8 +100,14 @@ class Model:
 
     def createFullyConvolutional(self, network):
         network = tflearn.layers.conv.global_avg_pool(network)
-        network = tf.tensordot(network,self.weights['wfc'],[[1],[0]])
-        network = network + self.weights['bfc']
+        #network = tf.tensordot(network,self.weights['wfc'],[[1],[0]])
+        #network = network + self.weights['bfc']
+        #code.interact(local=locals())
+        network = tf.tensordot(network,self.weights['wfc1'],[[1],[0]])
+        network = network + self.weights['bfc1']
+        network = tf.nn.relu(network)
+        network = tf.tensordot(network,self.weights['wfc2'],[[1],[0]])
+        network = network + self.weights['bfc2']
         return network
 
     def createCNNModelOld(self, network):
