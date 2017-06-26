@@ -22,6 +22,9 @@ class Model:
         self.train_logs = self.model_dir + '/train_logs'
         if not os.path.exists(self.train_logs):
             os.makedirs(self.train_logs)
+        self.accuracy_logs = self.model_dir + '/accuracy_logs'
+        if not os.path.exists(self.accuracy_logs):
+            os.makedirs(self.accuracy_logs)
         self.validation_logs = self.model_dir + '/validation_logs'
         if not os.path.exists(self.validation_logs):
             os.makedirs(self.validation_logs)
@@ -261,6 +264,10 @@ class Model:
     def addTrainLog(self, loss_value, epoch, batch):
         with open(self.train_logs+'/log_'+str(epoch)+'_'+str(batch)+'.npz', 'w') as fout:
             np.savez(fout,val=np.mean(loss_value))
+
+    def addAccuracyLog(self, accuracy, epoch, batch):
+        with open(self.accuracy_logs+'/log_'+str(epoch)+'_'+str(batch)+'.npz', 'w') as fout:
+            np.savez(fout,val=np.mean(accuracy))
 
     def addValidationLog(self, loss_value, epoch, batch):
         with open(self.validation_logs+'/log_'+str(epoch)+'_'+str(batch)+'.npz', 'w') as fout:

@@ -87,7 +87,7 @@ def main(args):
             image = image[0]
             imgs = np.expand_dims(np.expand_dims(image,0),3)
         feed_dict={model.images_placeholder: imgs}
-        pred = sess.run(model.containedClassesPrediction, feed_dict=feed_dict)
+        pred = sess.run(model.classes, feed_dict=feed_dict)
         pred = np.squeeze(pred)
         preds = {}
         for i in range(len(vocabulary)):

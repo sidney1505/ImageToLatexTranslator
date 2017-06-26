@@ -127,10 +127,11 @@ def main(args):
                     labels = batch['labels']
                     assert len(images) == len(labels) != 0
                 elif traintype == 1:
-                    labels = batch['contained_classes_list'] 
+                    labels = batch['contained_classes_list']
                     labels = labels.astype(np.float32)
                 print(images.shape)               
                 losses = []
+                accuracies = []
                 for j in range(len(images) / model.minibatchsize):
                     #if j > len(images) / model.batchsize - 2:
                     #    break
@@ -146,11 +147,27 @@ def main(args):
                     # code.interact(local=locals())
                     feed_dict={model.images_placeholder: imgs, labels_placeholder: labs}
                     if phase == "training":
-                        _, loss_value = sess.run([train_op, loss], feed_dict=feed_dict)
+                        _, loss_value, classes = sess.run([train_op, loss, model.classes], feed_dict=feed_dict)
+                        print('loss:')
                         print(loss_value)
                         losses.append(loss_value)
+                        accuracy = 0.0
+                        if traintype == 1:
+                            for ccpb in range(classes.shape[0]):
+                                #print('A')
+                                for ccp in range(classes.shape[1]):
+                                    #print('B')
+                                    if classes[ccpb][ccp] >= 0.5 and labs[ccpb][ccp] == 1 or classes[ccpb][ccp] < 0.5 and labs[ccpb][ccp] == 0:
+                                        #print('C')
+                                        accuracy = accuracy + 1.0
+                        accuracy = accuracy / (classes.shape[0] * classes.shape[1])
+                        #code.interact(local=locals())
+                        print('accuracy:')
+                        print(accuracy)
+                        accuracies.append(accuracy)
                         if j == len(images) / model.minibatchsize - 1:
-                            model.addTrainLog(np.mean(loss_value), i, k)
+                            model.addTrainLog(losses, i, k)
+                            model.addAccuracyLog(accuracies, i, k)
                             # calculating the validation loss
                             val_imgs = []
                             val_labs = []
