@@ -95,6 +95,7 @@ def main(args):
         for key in sorted(preds):
             ccs, voc =  preds[key]
             print(str(key) + '  :  ' + str(ccs) + '  :  ' + voc)
+        code.interact(local=dict(globals(), **locals())) 
     print(image_name)
     print(line_strip)
 

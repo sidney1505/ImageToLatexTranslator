@@ -2,7 +2,7 @@ import os
 import shutil
 for file in os.listdir('.'):
 	logs = []
-	path = file + '/validation_logs'
+	path = file + '/logs'
 	if os.path.exists(path):
 		logs = os.listdir(path)
 	if len(logs) < 50:

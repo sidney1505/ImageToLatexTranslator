@@ -48,10 +48,11 @@ def main(args):
         model = models.wysiwyg.load(model_path, sess)
         for batchfile in batchfiles:
             batch = np.load(batch_dir + '/' + batchfile)
+            print(batchfile + ' loaded!')
             preds = []
             images = batch['images']
             train_k = 20
-            while images.shape[1] * images.shape[2] * train_k > 1000000:
+            while images.shape[1] * images.shape[2] * train_k > model.capacity:
                 train_k = train_k - 1
             if train_k == 0:
                 continue
@@ -62,11 +63,15 @@ def main(args):
                     imgs.append(images[b])
                 imgs = np.array(imgs)
                 feed_dict={model.images_placeholder: imgs}
-                pred = sess.run(model.containedClassesPrediction, feed_dict=feed_dict)
+                pred = sess.run(model.containedClassesPrediction, \
+                    feed_dict=feed_dict)
                 preds.append(pred)
             preds = np.concatenate(preds)
             with open(output_dir + "/" + batchfile, 'w') as fout:
-                np.savez(fout, images=preds, labels=batch['labels'], num_classes=batch['num_classes'], contained_classes_list=batch['contained_classes_list'])
+                np.savez(fout, images=preds, labels=batch['labels'], \
+                    num_classes=batch['num_classes'], \
+                    contained_classes_list=batch['contained_classes_list'])
+            print(batchfile + ' saved!')
 
 
 

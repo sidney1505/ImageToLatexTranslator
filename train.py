@@ -15,203 +15,246 @@ def process_args(args):
     parser = argparse.ArgumentParser(description='description')
     parser.add_argument('--phase', dest='phase',
                         type=str, default='training',
-                        help=('Directory containing processed images.'))
+                        help=('The phase (training or prediction).'))
     parser.add_argument('--traintype', dest='traintype',
                         type=str, default=1,
-                        help=('Type of the training/evaluation. 0 = normal, 1 = pretraining'))
-    parser.add_argument('--batch-dir', dest='batch_dir',
-                        type=str, required=True,
-                        help=('path where the batches are stored'))
-    parser.add_argument('--val-dir', dest='val_dir',
-                        type=str, required=True,
-                        help=('path where the validation batches are stored'))
-    parser.add_argument('--store-dir', dest='store_dir',
-                        type=str, default='SavedModels',
-                        help=('path where the models are stored'))
-    parser.add_argument('--minibatchsize', dest='minibatchsize',
-                        type=str, default=100000,
-                        help=('size of the minibatches'))
+                        help=('Type of the training/evaluation.\
+                             0 = normal, 1 = pretraining cnn only, \
+                             2 = encoder refinement only, \
+                             3 = decoder only'))
     parser.add_argument('--load-model', dest='load_model',
                         type=str, default=False,
                         help=('size of the minibatches'))
+    parser.add_argument('--train-batch-dir', dest='train_batch_dir',
+                        type=str, required=True,
+                        help=('Path where the training \
+                            batches are stored'))
+    parser.add_argument('--val-batch-dir', dest='val_batch_dir',
+                        type=str, required=True,
+                        help=('Path where the validation \
+                            batches are stored'))
+    parser.add_argument('--model-dir', dest='model_dir',
+                        type=str, default='SavedModels',
+                        help=('Path where the model is stored \
+                            if it already exists or \
+                            should be stored if not.'))
+    parser.add_argument('--capacity', dest='capacity',
+                        type=str, default=100000,
+                        help=('The total amount of floats \
+                            that can be propagated through \
+                            the network at a time. \
+                            Influences the batch size!'))
     parameters = parser.parse_args(args)
     return parameters
 
-def main(args):
-    parameters = process_args(args)
-    # the phase, training or prediction, that is performed
-    phase = parameters.phase
-    #
-    traintype = parameters.traintype
-    #
-    load_model = parameters.load_model
-    # the directory, where the training batches are stored
-    batch_dir = parameters.batch_dir
-    assert os.path.exists(batch_dir), batch_dir
-    minibatchsize = parameters.minibatchsize
-    # the training batchfiles
-    batchfiles = os.listdir(batch_dir)
-    batch0 = np.load(batch_dir + '/batch0.npz')
-    # extract some needed paramters from the first batch which has to exist
-    num_classes = batch0['num_classes']
-    max_num_tokens = len(batch0['labels'][0])
-    # the directory where the validation batches are stored
-    val_dir = parameters.val_dir
-    assert os.path.exists(val_dir), val_dir
-    validation_batches = os.listdir(val_dir)
-    validation_batches_it = 0
-    val_minibatchsize = 1
+def calculateMinibatchsize(image, capacity):
+    minibatchsize = 20
+    while image.shape[0] * image.shape[1] * minibatchsize > capacity:
+        minibatchsize = minibatchsize - 1
+    return minibatchsize
+
+def loadBatch(batch_dir, batch_names, batch_it, traintype, capacity):
+    batch = None
+    batch_images = None
+    new_iteration = False
+    minibatchsize = None
+    batch_labels = None
     while True:
-        val_batch = np.load(batch_dir + '/' + validation_batches[validation_batches_it])
-        val_images = val_batch['images']
-        val_k = 20
-        while val_images.shape[1] * val_images.shape[2] * val_k > 1000000:
-            val_k = val_k - 1
-        val_minibatchsize = val_k
-        if val_k != 0:
+        batch = np.load(batch_dir + '/' + batch_names[batch_it])
+        batch_images = batch['images']
+        minibatchsize = calculateMinibatchsize(batch_images[0], \
+            capacity)
+        if minibatchsize != 0:
             break
         else:
-            validation_batches_it = validation_batches_it + 1 % len(validation_batches)
+            new_iteration = (batch_it + 1 >= len(batch_names))
+            batch_it = (batch_it + 1) % len(batch_names)
     if traintype == 0:
-        val_labels = val_batch['labels']
-    elif traintype == 1:
-        val_labels = val_batch['contained_classes_list']
-    val_j = 0
-    val_imgs = []
-    val_labs = []
-    val_losses = []    
+        batch_labels = batch['labels']
+    elif traintype >= 1:
+        batch_labels = batch['contained_classes_list']
+    classes_true = batch['contained_classes_list']
+    new_iteration = (batch_it + 1 >= len(batch_names))
+    batch_it = (batch_it + 1) % len(batch_names)
+    assert len(batch_images) == len(batch_labels) != 0
+    return batch_images, minibatchsize, batch_it, batch_labels, new_iteration, \
+        classes_true
+
+def createMinibatch(batch_data, minibatch_it, minibatchsize):
+    minibatch_data = []
+    for it in range(minibatch_it * minibatchsize, min((minibatch_it + 1) * \
+            minibatchsize,len(batch_data))):
+        minibatch_data.append(batch_data[it])
+    return np.array(minibatch_data)
+
+def calculateAccuracy(classes_pred, classes_true):
+    accuracy = 0.0
+    for ccpb in range(classes_pred.shape[0]):
+        for ccp in range(classes_pred.shape[1]):
+            if classes_pred[ccpb][ccp] >= 0.5 and classes_true[ccpb][ccp] == 1 \
+                    or classes_pred[ccpb][ccp] < 0.5 and classes_true[ccpb][ccp] == 0:
+                accuracy = accuracy + 1.0
+    return accuracy / (classes_pred.shape[0] * classes_pred.shape[1])
+
+def main(args):
+    params = process_args(args)
+
+    # check if given paths really exist
+    assert os.path.exists(params.train_batch_dir), \
+        "Train batch directory doesn't exists!"
+    assert os.path.exists(params.val_batch_dir), \
+        "Validation batch directory doesn't exists!"
+    assert os.path.exists(params.model_dir) or not params.load_model, \
+        "Model directory doesn't exists!"
+
+    # load the names of the training & validation batchfiles
+    train_batch_names = os.listdir(params.train_batch_dir)
+    assert train_batch_names != [], \
+        "Training batch directory is empty!"
+    val_batch_names = os.listdir(params.val_batch_dir)
+    assert val_batch_names != [], \
+        "Validation batch directory is empty!"
+
+    # extract some needed paramters from the first training batch
+    batch0 = np.load(params.train_batch_dir + '/' + train_batch_names[0])
+    num_classes = batch0['num_classes']
+    max_num_tokens = len(batch0['labels'][0])    
+
+    # creates the tensorflow session were the tensorflow variables can live
     with tf.Graph().as_default():
         sess = tf.Session()
+
+        # load/create the model
         model = None
-        if load_model:
-            model = models.wysiwyg.load(model_path, sess)
+        if params.load_model:
+            model = models.wysiwyg.load(params.model_dir, sess)
+            # intialise uninitialised variables???
         else:
-            # the directory where the models are stored
-            store_dir = parameters.store_dir
-            if not os.path.exists(store_dir):
-                os.makedirs(store_dir)
-            model_dir = store_dir + '/model-' + str(datetime.datetime.now())
-            if not os.path.exists(model_dir):
-                os.makedirs(model_dir)
-            model = Model(num_classes, max_num_tokens, 0.01,model_dir=model_dir)
-        if traintype == 0:
-            labels_placeholder = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])
+            # create the model directory
+            if not os.path.exists(params.model_dir):
+                os.makedirs(params.model_dir)
+            params.model_dir = params.model_dir + '/model-' + \
+                str(datetime.datetime.now())
+            if not os.path.exists(params.model_dir):
+                os.makedirs(params.model_dir)
+            model = Model(num_classes, max_num_tokens, params.model_dir, capacity= \
+                params.capacity)       
+
+        # define used groundtruth, used loss function and used train_op
+        if params.traintype == 0:
+            labels_placeholder = tf.placeholder(dtype=tf.int32, \
+                shape=[None,max_num_tokens])
             loss = model.loss(model.network, labels_placeholder)
-        elif traintype == 1:
-            labels_placeholder = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
-            loss = model.containedClassesLoss(model.containedClassesPrediction, labels_placeholder)
+        elif params.traintype == 1:
+            labels_placeholder = tf.placeholder(dtype=tf.float32, \
+                shape=[None,num_classes])
+            loss = model.containedClassesLoss(model.containedClassesPrediction, \
+                labels_placeholder)
+        elif params.traintype == 2:
+            labels_placeholder = tf.placeholder(dtype=tf.float32, \
+                shape=[None,num_classes])
+            loss = model.containedClassesLoss(model.encoded, labels_placeholder)
         train_op = model.training(loss)
+        # initialises all variables
         init = tf.global_variables_initializer()
         sess.run(init)
+        # intial save! save seeds??
         model.save(sess)
-        print('count of variables:')
-        count = np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()])
-        print(count)
-        for i in range(model.nr_epochs):
-            val_loss_list = []
-            k = 0
-            for batchfile in batchfiles: # randomise!!!
-                print('load ' + batchfile + '!')
-                batch = np.load(batch_dir + '/' + batchfile)
-                images = batch['images']
-                train_k = 20
-                while images.shape[1] * images.shape[2] * train_k > 1000000:
-                    train_k = train_k - 1
-                if train_k == 0:
-                    continue
-                model.minibatchsize = train_k
-                labels = None
-                #print('AAAAAAAAAAAAAaaaaaaaa')
-                #code.interact(local=locals())
-                if traintype == 0:
-                    labels = batch['labels']
-                    assert len(images) == len(labels) != 0
-                elif traintype == 1:
-                    labels = batch['contained_classes_list']
-                    labels = labels.astype(np.float32)
-                print(images.shape)               
-                losses = []
-                accuracies = []
-                for j in range(len(images) / model.minibatchsize):
-                    #if j > len(images) / model.batchsize - 2:
-                    #    break
-                    print('batch(' + str(k) + ',' + str(j*model.minibatchsize) + '):')
-                    print(images.shape)
-                    imgs = []
-                    labs = []
-                    for b in range(j*model.minibatchsize, min((j+1)*model.minibatchsize,len(images))):
-                        imgs.append(images[b])
-                        labs.append(labels[b])
-                    imgs = np.array(imgs)
-                    labs = np.array(labs)
-                    # code.interact(local=locals())
-                    feed_dict={model.images_placeholder: imgs, labels_placeholder: labs}
-                    if phase == "training":
-                        _, loss_value, classes = sess.run([train_op, loss, model.classes], feed_dict=feed_dict)
-                        print('loss:')
-                        print(loss_value)
-                        losses.append(loss_value)
-                        accuracy = 0.0
-                        if traintype == 1:
-                            for ccpb in range(classes.shape[0]):
-                                #print('A')
-                                for ccp in range(classes.shape[1]):
-                                    #print('B')
-                                    if classes[ccpb][ccp] >= 0.5 and labs[ccpb][ccp] == 1 or classes[ccpb][ccp] < 0.5 and labs[ccpb][ccp] == 0:
-                                        #print('C')
-                                        accuracy = accuracy + 1.0
-                        accuracy = accuracy / (classes.shape[0] * classes.shape[1])
-                        #code.interact(local=locals())
-                        print('accuracy:')
-                        print(accuracy)
-                        accuracies.append(accuracy)
-                        if j == len(images) / model.minibatchsize - 1:
-                            model.addTrainLog(losses, i, k)
-                            model.addAccuracyLog(accuracies, i, k)
-                            # calculating the validation loss
-                            val_imgs = []
-                            val_labs = []
-                            for b in range(val_j*val_minibatchsize, min((val_j+1)*val_minibatchsize,len(val_images))):
-                                val_imgs.append(val_images[b])
-                                val_labs.append(val_labels[b])
-                            val_imgs = np.array(val_imgs)
-                            val_labs = np.array(val_labs)
-                            val_feed_dict={model.images_placeholder: val_imgs, labels_placeholder: val_labs}
-                            val_loss_value = sess.run(loss, feed_dict=val_feed_dict)
-                            val_loss_list.append(val_loss_value)
-                            model.addValidationLog(val_loss_value, i, k)
-                            val_j = val_j + 1
-                            if (val_j + 1) * val_minibatchsize > len(val_images):
-                                val_j = 0
-                                if validation_batches_it == len(validation_batches) - 1:
-                                    validation_batches_it = 0
-                                else:
-                                    validation_batches_it = validation_batches_it + 1
-                                while True:
-                                    val_batch = np.load(batch_dir + '/' + validation_batches[validation_batches_it])
-                                    val_images = val_batch['images']
-                                    val_k = 20
-                                    while val_images.shape[1] * val_images.shape[2] * val_k > 1000000:
-                                        val_k = val_k - 1
-                                    val_minibatchsize = val_k
-                                    if val_k != 0:
-                                        break
-                                    else:
-                                        validation_batches_it = validation_batches_it + 1 % len(validation_batches)
-                                if traintype == 0:
-                                    val_labels = val_batch['labels']
-                                elif traintype == 1:
-                                    val_labels = val_batch['contained_classes_list']
-                    elif phase == "prediction":
-                        network = sess.run(model.network, feed_dict=feed_dict)
-                        print(network.shape)
-                k = k + 1
-            val_losses.append(np.mean(val_loss_list))
-            if len(val_losses) > 1 and val_losses[-2] <= val_losses[-1]:
-                print('decrease learning rate!')
-                model.learning_rate = model.learning_rate * 0.5
+        
+        # creates the first validation batch
+        val_batch_it = 0    
+        val_batch_images, val_minibatchsize, val_batch_it, val_batch_labels,_, \
+            val_classes_true = loadBatch(params.val_batch_dir, val_batch_names, \
+            val_batch_it, params.traintype, model.capacity)
+        # validation minibatch iterator needs to be created
+        val_minibatch_it = 0 ####
+
+        # the training loop
+        for epoch in range(model.nr_epochs):
+            train_batch_it = 0
+            train_batch_images, train_minibatchsize, train_batch_it, \
+                train_batch_labels, new_train_iteration, train_batch_classes_true = \
+                loadBatch(params.train_batch_dir, train_batch_names, train_batch_it, \
+                params.traintype, model.capacity)
+            val_minibatch_loss_old = float("inf")
+            while not new_train_iteration: # randomise!!!
+                train_batch_losses = []
+                train_batch_accuracies = []
+                for train_minibatch_it in range(train_batch_images.shape[0] \
+                        / train_minibatchsize):
+                    # create the minibatches
+                    train_minibatch_images = createMinibatch(train_batch_images, \
+                        train_minibatch_it, train_minibatchsize)
+                    train_minibatch_labels = createMinibatch(train_batch_labels, \
+                        train_minibatch_it, train_minibatchsize)
+                    train_minibatch_classes_true = createMinibatch( \
+                        train_batch_classes_true, \
+                        train_minibatch_it, train_minibatchsize)
+                    # create the dict, that is fed into the placeholders
+                    feed_dict={model.images_placeholder: train_minibatch_images, \
+                    labels_placeholder: train_minibatch_labels}
+                    _, train_minibatch_loss_value, train_minibatch_classes_pred \
+                        = sess.run([train_op, loss, model.classes], \
+                        feed_dict=feed_dict)
+                    
+                    train_minibatch_accuracy = calculateAccuracy( \
+                        train_minibatch_classes_pred, train_minibatch_classes_true)
+
+                    print('minibatch(' + str(epoch) + ',' + str(train_batch_it) \
+                        + ',' + str(train_minibatch_it*train_minibatchsize)+') : '+\
+                        str(train_minibatch_images.shape) + ' : ' + \
+                        str(train_minibatch_labels.shape) + ' : ' + \
+                        str(train_minibatch_loss_value) + ' : ' + \
+                        str(train_minibatch_accuracy))
+                    train_batch_losses.append(train_minibatch_loss_value)
+                    train_batch_accuracies.append(train_minibatch_accuracy)
+                # calculating the validation loss
+                # create the minibatches
+                val_minibatch_images = createMinibatch(val_batch_images, \
+                    val_minibatch_it, val_minibatchsize)
+                val_minibatch_labels = createMinibatch(val_batch_labels, \
+                    val_minibatch_it, val_minibatchsize)
+                val_minibatch_classes_true = createMinibatch( \
+                    val_classes_true, val_minibatch_it, val_minibatchsize)
+                # create the dict, that is fed into the placeholders
+                feed_dict={model.images_placeholder: val_minibatch_images, \
+                    labels_placeholder: val_minibatch_labels}
+                val_minibatch_loss_value, val_minibatch_classes_pred \
+                    = sess.run([loss, model.classes], \
+                    feed_dict=feed_dict)
+                
+                val_minibatch_accuracy = calculateAccuracy( \
+                    val_minibatch_classes_pred, val_minibatch_classes_true)
+                print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+                print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')            
+                print('minibatch(' + str(epoch) + ',' + str(val_batch_it) \
+                    + ',' + str(val_minibatch_it * val_minibatchsize) + ') : ' + \
+                    str(val_minibatch_images.shape) + ' : ' + \
+                    str(val_minibatch_labels.shape) + ' : ' + \
+                    str(val_minibatch_loss_value) + ' : ' + \
+                    str(val_minibatch_accuracy))
+                print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+                print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+                model.addLog(np.mean(train_batch_losses), val_minibatch_loss_value, \
+                    np.mean(train_batch_accuracies), val_minibatch_accuracy, epoch, \
+                    train_batch_it)
+                val_minibatch_it = val_minibatch_it + 1
+                if (val_minibatch_it + 1) * val_minibatchsize > len(val_batch_images):
+                    val_batch_images, val_minibatchsize, val_batch_it, \
+                        val_batch_labels,_,val_classes_true = \
+                        loadBatch(params.val_batch_dir, \
+                        val_batch_names, val_batch_it, params.traintype, model.capacity)
+                    val_minibatch_it = 0                
+                train_batch_images, train_minibatchsize, train_batch_it, \
+                train_batch_labels, new_train_iteration, train_batch_classes_true = \
+                    loadBatch(params.train_batch_dir, train_batch_names, \
+                    train_batch_it, params.traintype, model.capacity)
+                if val_minibatch_loss_old < val_minibatch_loss_value:
+                    print('decrease learning rate!')
+                    model.learning_rate = model.learning_rate * 0.9
+                val_minibatch_loss_old = val_minibatch_loss_value
             model.save(sess)
-        sess.close()        
+        sess.close()
 
 if __name__ == '__main__':
     main(sys.argv[1:])

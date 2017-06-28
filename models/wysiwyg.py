@@ -9,30 +9,30 @@ from tflearn.layers.conv import conv_2d, max_pool_2d
 from tflearn.layers.estimator import regression
 
 class Model:
-    def __init__(self,  num_classes, max_num_tokens, minibatchsize=30000, learning_rate=0.01, num_features=512, nr_epochs=50, model_dir=''):
+    def __init__(self,  num_classes, max_num_tokens, model_dir,\
+            capacity=30000, learning_rate=0.01,\
+            num_features=512, nr_epochs=50):
         # intialise class variables
         self.num_classes = num_classes
         self.max_num_tokens = max_num_tokens
-        self.minibatchsize = minibatchsize
+        self.capacity = capacity
         self.learning_rate = learning_rate
         self.num_features = num_features
         self.nr_epochs = nr_epochs
         # save the model
         self.model_dir = model_dir
-        self.train_logs = self.model_dir + '/train_logs'
-        if not os.path.exists(self.train_logs):
-            os.makedirs(self.train_logs)
-        self.accuracy_logs = self.model_dir + '/accuracy_logs'
-        if not os.path.exists(self.accuracy_logs):
-            os.makedirs(self.accuracy_logs)
-        self.validation_logs = self.model_dir + '/validation_logs'
-        if not os.path.exists(self.validation_logs):
-            os.makedirs(self.validation_logs)
+        self.logs = self.model_dir + '/logs'
+        if not os.path.exists(self.logs):
+            os.makedirs(self.logs)
         self.save_path = self.model_dir + '/weights.cpk'
         self.param_path = self.model_dir + '/params.npz'
         if not os.path.exists(self.param_path):
             with open(self.param_path, 'w') as fout:
-                np.savez(fout, num_classes=num_classes, max_num_tokens=max_num_tokens, minibatchsize=minibatchsize, learning_rate=learning_rate, num_features=num_features, nr_epochs=nr_epochs, model_dir=model_dir)      
+                np.savez(fout, num_classes=num_classes, \
+                    max_num_tokens=max_num_tokens, \
+                    capacity=capacity, learning_rate=learning_rate, \
+                    num_features=num_features, nr_epochs=nr_epochs, \
+                    model_dir=model_dir)      
         self.weights = {
             # 5x5 conv, 1 input, 32 outputs
             'wconv1': tf.Variable(tf.random_normal([3, 3, 1, 64]), name='wconv1'),
@@ -56,46 +56,64 @@ class Model:
             'bfc': tf.Variable(tf.random_normal([self.num_classes]), name='bfc1'),
             'wfc1': tf.Variable(tf.random_normal([512,1000]), name='wfc1'),
             'bfc1': tf.Variable(tf.random_normal([1000]), name='bfc1'),
-            'wfc2': tf.Variable(tf.random_normal([1000,self.num_classes]), name='wfc2'),
+            'wfc2': tf.Variable(tf.random_normal([1000,self.num_classes]), \
+                name='wfc2'),
             'bfc2': tf.Variable(tf.random_normal([self.num_classes]), name='bfc2'),
+            #'wfc3': tf.Variable(tf.random_normal([1024,1000]), name='wfc3'),
+            #'bfc3': tf.Variable(tf.random_normal([1000]), name='bfc3'),
+            #'wfc4': tf.Variable(tf.random_normal([1000,self.num_classes]), name='wfc4'),
+            #'bfc4': tf.Variable(tf.random_normal([self.num_classes]), name='bfc4'),
         }
         # create the network graph
-        self.images_placeholder = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
+        self.images_placeholder = tf.placeholder(dtype=tf.float32, \
+            shape=[None, None, None, 1])
         network = self.createCNNModel(self.images_placeholder)
         self.containedClassesPrediction = self.createFullyConvolutional(network)
         self.classes = tf.sigmoid(self.containedClassesPrediction)
         network, self.num_features = self.createEncoderLSTM(network)
         self.network = self.createDecoderLSTM(network)
+        #
+        #self.images_placeholder2 = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 512])
+        #self.encoded = self.createEncoderLSTM(self.images_placeholder2)
+        #self.containedClassesPredictionRefined = self.createFullyConvolutional2(self.encoded)
+        #self.classesRefined = tf.sigmoid(self.encoded)
+        #
         self.saver = tf.train.Saver()
 
     def createCNNModel(self, network):
-        network = tf.nn.conv2d(network, self.weights['wconv1'], strides=[1,1,1,1], padding='SAME')
+        network = tf.nn.conv2d(network, self.weights['wconv1'], strides=[1,1,1,1], \
+            padding='SAME')
         network = tf.nn.bias_add(network, self.weights['bconv1'])
         network = max_pool_2d(network, 2, strides=2)
         network = tf.nn.relu(network)
 
-        network = tf.nn.conv2d(network, self.weights['wconv2'], strides=[1,1,1,1], padding='SAME')
+        network = tf.nn.conv2d(network, self.weights['wconv2'], strides=[1,1,1,1], \
+            padding='SAME')
         network = tf.nn.bias_add(network, self.weights['bconv2'])
         network = max_pool_2d(network, 2, strides=2)
         network = tf.nn.relu(network)
 
-        network = tf.nn.conv2d(network, self.weights['wconv3'], strides=[1,1,1,1], padding='SAME')
+        network = tf.nn.conv2d(network, self.weights['wconv3'], strides=[1,1,1,1], \
+            padding='SAME')
         network = tf.nn.bias_add(network, self.weights['bconv3'])
         network = tflearn.layers.normalization.batch_normalization(network) #same as torch?
         network = tf.nn.relu(network)
 
-        network = tf.nn.conv2d(network, self.weights['wconv4'], strides=[1,1,1,1], padding='SAME')
+        network = tf.nn.conv2d(network, self.weights['wconv4'], strides=[1,1,1,1], \
+            padding='SAME')
         network = tf.nn.bias_add(network, self.weights['bconv4'])
         network = max_pool_2d(network, [2,1], strides=[2,1])
         network = tf.nn.relu(network)
 
-        network = tf.nn.conv2d(network, self.weights['wconv5'], strides=[1,1,1,1], padding='SAME')
+        network = tf.nn.conv2d(network, self.weights['wconv5'], strides=[1,1,1,1], \
+            padding='SAME')
         network = tf.nn.bias_add(network, self.weights['bconv5'])
         network = tflearn.layers.normalization.batch_normalization(network) #same as torch?
         network = max_pool_2d(network, [1,2], strides=[1,2])
         network = tf.nn.relu(network)
 
-        network = tf.nn.conv2d(network, self.weights['wconv6'], strides=[1,1,1,1], padding='SAME')
+        network = tf.nn.conv2d(network, self.weights['wconv6'], strides=[1,1,1,1], \
+            padding='SAME')
         network = tf.nn.bias_add(network, self.weights['bconv6'])
         network = tflearn.layers.normalization.batch_normalization(network)
         network = tf.nn.relu(network)
@@ -113,26 +131,16 @@ class Model:
         network = network + self.weights['bfc2']
         return network
 
-    def createCNNModelOld(self, network):
-        network = tflearn.layers.conv.conv_2d(network, 64, 3, activation='relu') # padding???
-        network = max_pool_2d(network, 2, strides=2)
-
-        network = conv_2d(network, 128, 3, activation='relu')
-        network = max_pool_2d(network, 2, strides=2)
-
-        network = conv_2d(network, 256, 3, activation='relu')
-        network = tflearn.layers.normalization.batch_normalization(network) #same as torch?
-
-        network = conv_2d(network, 256, 3, activation='relu')
-        network = max_pool_2d(network, [1,2], strides=[1,2], padding=0)
-
-        network = conv_2d(network, 512, 3, activation='relu')
-        network = tflearn.layers.normalization.batch_normalization(network) #same as torch?
-        network = max_pool_2d(network, [2,1], strides=[1,2], padding=0)
-
-        network = conv_2d(network, 512, 3, activation='relu')
-        network = tflearn.layers.normalization.batch_normalization(network) #same as torch?
-        #network = tf.Print(network,[tf.shape(network)],"after cnn: ")
+    def createFullyConvolutional2(self, network):
+        network = tflearn.layers.conv.global_avg_pool(network)
+        #network = tf.tensordot(network,self.weights['wfc'],[[1],[0]])
+        #network = network + self.weights['bfc']
+        #code.interact(local=locals())
+        network = tf.tensordot(network,self.weights['wfc3'],[[1],[0]])
+        network = network + self.weights['bfc3']
+        network = tf.nn.relu(network)
+        network = tf.tensordot(network,self.weights['wfc4'],[[1],[0]])
+        network = network + self.weights['bfc4']
         return network
 
     def createEncoderLSTM(self, network):
@@ -150,12 +158,15 @@ class Model:
         while_condition = lambda i, network, l, fw_state, bw_state: tf.less(i, rows)
         def body(i, network, l, fw_state, bw_state):
             #i = tf.Print(i,[i],"row: ")
-            outputs, output_states = tf.nn.bidirectional_dynamic_rnn(rnncell_fw, rnncell_bw, network[i], initial_state_fw=fw_state,initial_state_bw=bw_state) #,dtype=tf.float32)
+            outputs, output_states = tf.nn.bidirectional_dynamic_rnn(rnncell_fw, \
+                rnncell_bw, network[i], initial_state_fw=fw_state, \
+                initial_state_bw=bw_state)
             fw_state, bw_state = output_states
             # code.interact(local=locals())
             l = l.write(i, outputs)        
             return [tf.add(i, 1), network, l, fw_state, bw_state]
-        i, network, l, fw_state, bw_state = tf.while_loop(while_condition, body, params)
+        i, network, l, fw_state, bw_state = tf.while_loop(while_condition, body, \
+            params)
         network = l.stack()
         #network = tf.Print(network,[tf.shape(network)],"in encoder: ")
         network = tf.transpose(network, perm=[2,0,3,1,4])
@@ -167,7 +178,8 @@ class Model:
         return network, num_features #
 
     def createDecoderLSTM(self, network):
-        shape = tf.Print(tf.shape(network),[tf.shape(network)],"dynamic network shape from decoder input!!!!!!",1)
+        shape = tf.Print(tf.shape(network),[tf.shape(network)], \
+            "dynamic network shape from decoder input!!!!!!",1)
         dim_beta = 50 # hyperparameter!!!
         dim_h = 512 # hyperparameter!!!
         batchsize = shape[0] # tf.shape(network)[0] # besserer weg???
@@ -238,7 +250,8 @@ class Model:
             #t = tf.Print(t,[t],"tnew =============================")
             return [t, network, l, h, y, o, beta, network_, w1, w2]
             #return tf.cond(cond,aaa,bbb)
-        t, network, l, h, y, o, beta, network_, w1, w2 = tf.while_loop(while_condition, body, params)
+        t, network, l, h, y, o, beta, network_, w1, \
+            w2 = tf.while_loop(while_condition, body, params)
         #t = tf.Print(t,[t],"ttttttttttttttttttttttttttttend =============================",5)
         l = l.stack()
         l = tf.transpose(l, [1,0,2])
@@ -248,7 +261,8 @@ class Model:
     def loss(self, pred, labels):
         pred = tf.transpose(pred, [1,0,2])
         labels = tf.transpose(labels, [1,0])
-        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, logits=pred)
+        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, \
+            logits=pred)
         return tf.reduce_mean(loss)
 
     def containedClassesLoss(self, pred, labels):
@@ -258,37 +272,43 @@ class Model:
 
     def training(self, loss):
         optimizer = tf.train.MomentumOptimizer(self.learning_rate,0.9)
-        train_op = optimizer.minimize(loss) #, global_step=global_step)
+        train_op = optimizer.minimize(loss)
         return train_op
 
-    def addTrainLog(self, loss_value, epoch, batch):
-        with open(self.train_logs+'/log_'+str(epoch)+'_'+str(batch)+'.npz', 'w') as fout:
-            np.savez(fout,val=np.mean(loss_value))
-
-    def addAccuracyLog(self, accuracy, epoch, batch):
-        with open(self.accuracy_logs+'/log_'+str(epoch)+'_'+str(batch)+'.npz', 'w') as fout:
-            np.savez(fout,val=np.mean(accuracy))
-
-    def addValidationLog(self, loss_value, epoch, batch):
-        with open(self.validation_logs+'/log_'+str(epoch)+'_'+str(batch)+'.npz', 'w') as fout:
-            np.savez(fout,val=np.mean(loss_value))
+    def addLog(self, train_loss, val_loss, train_accuracy, val_accuracy, epoch, \
+            batch):
+        with open(self.logs+'/log_'+str(epoch)+'_'+str(batch)+'.npz', 'w') \
+                as fout:
+            np.savez(fout,train_loss=train_loss,val_loss=val_loss, \
+                train_accuracy=train_accuracy,val_accuracy=val_accuracy)
 
     def save(self, sess):
         shutil.rmtree(self.param_path, ignore_errors=True)
         if not os.path.exists(self.param_path):
             with open(self.param_path, 'w') as fout:
-                np.savez(fout, num_classes=self.num_classes, max_num_tokens=self.max_num_tokens, minibatchsize=self.minibatchsize, learning_rate=self.learning_rate, num_features=self.num_features, nr_epochs=self.nr_epochs, model_dir=self.model_dir)
+                np.savez(fout, num_classes=self.num_classes, \
+                    max_num_tokens=self.max_num_tokens, \
+                    capacity=self.capacity, \
+                    learning_rate=self.learning_rate, \
+                    num_features=self.num_features, \
+                    nr_epochs=self.nr_epochs, model_dir=self.model_dir)
         self.saver.save(sess, self.save_path)
+
+    def countVariables(self,sess):
+        return np.sum([np.prod(v.get_shape().as_list()) \
+            for v in tf.trainable_variables()])
 
 def load(model_path, sess):
     params = np.load(model_path + '/params.npz')
     num_classes = np.asscalar(params['num_classes'])
     max_num_tokens = np.asscalar(params['max_num_tokens'])
-    minibatchsize = np.asscalar(params['minibatchsize'])
+    model_dir = np.asscalar(params['model_dir'])
+    capacity = np.asscalar(params['capacity'])
     learning_rate = np.asscalar(params['learning_rate'])
     num_features = np.asscalar(params['num_features'])
     nr_epochs = np.asscalar(params['nr_epochs'])
-    model_dir = np.asscalar(params['model_dir'])
-    model = Model(num_classes, max_num_tokens, minibatchsize, learning_rate, num_features, nr_epochs, model_dir)
+    #code.interact(local=dict(globals(), **locals())) 
+    model = Model(num_classes, max_num_tokens, model_dir, capacity, learning_rate, \
+        num_features, nr_epochs)
     model.saver.restore(sess, model.save_path)
     return model
