@@ -132,11 +132,6 @@ class Model:
 
     def createSimpleAttentionModule(self, features):
         batchsize = tf.shape(features)[0]
-        #shape = tf.shape(features)
-        #shape = tf.Print(shape,[shape],"shape ====================")
-        # code.interact(local=dict(globals(), **locals()))
-        #num_features = features.shape[3].value
-        #features = tf.reshape(features,[shape[0],shape[1],shape[2],num_features])
         context0 = tflearn.layers.conv.global_avg_pool(features) # batchsize x num_features
         rnn_cell = tf.contrib.rnn.LSTMCell(512)
         rnn_cell_state = rnn_cell.zero_state(batch_size=batchsize, dtype=tf.float32)
@@ -147,15 +142,10 @@ class Model:
         outputs = tf.TensorArray(dtype=tf.float32, size=tf.constant(self.max_num_tokens))
         params = [tf.constant(0), features, outputs, rnn_cell_state, context0]
         def while_condition(token,_a,_b,_c,context):
-            #token = tf.Print(token,[token,self.max_num_tokens],"looptoken ====================")
             return tf.less(token, self.max_num_tokens)
         def body(token, features, outputs, rnn_cell_state, context):
-            batchsize = tf.shape(features)[0]
-            #batchsize = tf.Print(batchsize,[batchsize],"batchsize ====================")
-            token = token + batchsize - batchsize
-            #token = tf.Print(token,[token],"token ====================")
             # batch x height x width
-            e = tf.tensordot(self.weights['beta'],tf.tanh(context + features),[[0],[3]])
+            e = tf.tensordot(rnn_cell_state, features,[[0],[3]])
             # own softmax
             shape = tf.shape(e)
             alpha = tf.reshape(e,[shape[0],shape[1]*shape[2]])
@@ -166,25 +156,17 @@ class Model:
                 size=batchsize)
             inner_params = [tf.constant(0), alpha, features, inner_outputs]
             def inner_while_condition(batch, alpha, features, inner_outputs):
-                #batch = tf.Print(batch,[batch,batchsize],"batch ====================")
                 return tf.less(batch, batchsize)
             def inner_body(batch, alpha, features, inner_outputs):
-                #batch = tf.Print(batch,[batch],"batch ====================")
                 inner_outputs = inner_outputs.write(batch, \
                     tf.tensordot(alpha[batch],features[batch],[[0,1],[0,1]]))
                 return [batch + 1, alpha, features, inner_outputs]
-            maxbatch,_,_,inner_outputs = tf.while_loop(inner_while_condition, \
+            _,_,_,inner_outputs = tf.while_loop(inner_while_condition, \
                 inner_body,inner_params)
-            #maxbatch = tf.Print(maxbatch,[maxbatch],"maxbatch ====================")
-            #token = tf.Print(token,[token],"midtoken ====================")
-            token = token + maxbatch - maxbatch
-            #context = inner_outputs.stack() # batch x num_features
+            context = inner_outputs.stack()
             # apply the lstm
             output, rnn_cell_state = rnn_cell.__call__(context, rnn_cell_state)
-            #token = tf.Print(token,[token],"tokennnnn ====================")
             outputs = outputs.write(token, output)
-            # code.interact(local=dict(globals(), **locals()))
-            #token = tf.Print(token,[token],"endtoken ====================")
             return [token + 1, features, outputs, rnn_cell_state, output]
         _,_,outputs,_,_= tf.while_loop(while_condition, body, params)
         decoded = outputs.stack() # max_num_tokens x batchsize x num_features

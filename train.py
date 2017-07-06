@@ -60,6 +60,7 @@ def loadBatch(batch_dir, batch_names, batch_it, traintype, capacity):
     new_iteration = False
     minibatchsize = None
     batch_labels = None
+    batch_it_old = batch_it
     #code.interact(local=dict(globals(), **locals()))
     while True:
         batch = np.load(batch_dir + '/' + batch_names[batch_it])
@@ -72,7 +73,7 @@ def loadBatch(batch_dir, batch_names, batch_it, traintype, capacity):
         else:
             new_iteration = (batch_it + 1 >= len(batch_names))
             batch_it = (batch_it + 1) % len(batch_names)
-            assert batch_it != 0, 'capacity to small for training data'
+            assert batch_it != batch_it_old, 'capacity to small for training data'
     if traintype in [0,3,4]:
         batch_labels = batch['labels']
     elif traintype in [1,2]:
@@ -103,6 +104,7 @@ def calculateAccuracy(classes_pred, classes_true, stats):
     return accuracy / (classes_pred.shape[0] * classes_pred.shape[1]), stats
 
 def main(args):
+    print("training starts now!")
     params = process_args(args)
     params.traintype = int(params.traintype)
     params.capacity = int(params.capacity)
@@ -126,12 +128,12 @@ def main(args):
     # extract some needed paramters from the first training batch
     batch0 = np.load(params.train_batch_dir + '/' + train_batch_names[0])
     num_classes = batch0['num_classes']
-    max_num_tokens = len(batch0['labels'][0])    
+    max_num_tokens = len(batch0['labels'][0])
 
     # creates the tensorflow session were the tensorflow variables can live
     with tf.Graph().as_default():
         sess = tf.Session()
-
+        print('session created')
         # load/create the model
         model = None
         if params.load_model:
