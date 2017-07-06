@@ -68,7 +68,7 @@ def main(args):
     #
     with tf.Graph().as_default():
         sess = tf.Session()
-        model = models.wysiwyg.load(model_path, sess)
+        model = models.wysiwyg.load(model_path, sess, 1)
         with open(data_path) as fin:
             #code.interact(local=locals())
             lines = fin.readlines()

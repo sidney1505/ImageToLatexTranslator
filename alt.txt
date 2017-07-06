@@ -1,0 +1,123 @@
+* supervised
+* methoden
+* neuronale netze einschr
+ 
+
+
+
+Neural Networks (NNs) are a computional model in machine learning. They are inspired by the human brain and consist of a large collection of so called neurons. Most neural networks are supervised, even if there are some like autoencoders which aren't. Like all supervised machine learning algorithms neural networks need to be trained before they are able to fullfill their purpose. For this they get the dataset (x1,y1),...,(xn,yn) where x is the input and y the corresponding correct output, also called the ground truth. This dataset is divided into training, validation and test set in order to avoid overfitting and to test the neural network. Every neuron of the network has an activation function, which decides whether the neuron fires or not. The simplest activation function is a threshhold logic. For most training algorithms the derivative of this activation function is needed. Because of this smoothed versions of the threshhold logic like the sigmoid or the tanh function are common to be used as activation functions. Recently the Rectified Linear Unit Function (ReLU) became more popular because it is simpler to find the derivative. In order to train the network one has to define an error function. The most common error functions are mean squared error (MSE) and Cross Entropy (CE). Like mentioned before most training algorithms are gradient based. Every Neuron has a weight for every input connection and a bias. What the NN actually learns are these weights W and biases b. When the algorithm starts W and b are initialised. It is common to initialise them randomly. Lately also many people started to use weights from pretaining. After initialising them, W and b are improved iteratively. Basically one feeds a x into the network and gets the prediction o. Then the error is calculated. With this error one can calculate the gradient in weight space. This gradient is used to apply the gradient descend algorithm in the weight space in order to minimize the error. One could also calculate the hesse matrix and use the faster converging newton algorithm but for big neural networks it is too expensive to calculate the hesse matrix. If one would use the gradient descend algorithm (GD) exactly as described above the error function would be very fissured and the algorithm would oszillate which results in slow convergence. In order to smooth the error function batches of data are used (BGD). For the whole batch the same weights are used to calculate the error for the inputs of the batch. The gradient used for changing is the sum of the gradients of the single inputs. Additionally there are optimations like picking batches of the data randomly (SBGD) or add a part of the last gradient used for GD to the current (Momentum). Momentum helps with a lot of problems. One of this problems is, that normally the error function isn't convex, so the algorithm gets caught in local minima. By adding a momentum to the term one can hope to jump over such local minimas. Another problem is oszillation before the GD finally converges to the minimum. Here momentum also helps because the oszillating gradients erase each other. The third problem are flat planes in the error function where the the gradient is close to zero what also results in slow convergence. Momentum here leads to summing up the gradients and thus crossing the flat plane faster.
+
+
+In this chapter we will talk about feedforward networks like convolutional neural netword and as well as recurrent neural netwokr that are often used for image captioning.
+
+\section{Feedforward Networks}
+
+Feedforward Neural Networks are composed of a chain of layer, which in turn are composed of simple operations called neurons.
+The input traverses the layers succesively from the inputlayer to the outputlayer without traversing each layer a single time.
+Next we define with~$X$ the input that we propagate through the network, while~$o_M(X)$ will be our prediction.
+Since in this chapter we will talk about supervised architectures, we define with~$g_X$ the ground truth or labels of~$x$.
+Thus our training data we set to 
+
+\subsection{Single Layer Perceptron}
+
+
+The simplest case is Rosenbergs Perceptron. It consists of only one neuron with n inputs $x_1, \dots ,x_n$ and corresponding weights w\_1,...,w\_n. Additionally the neuron has a bias b. Otherwise it wouldn't be able to learn functions which doesn't go through the origin. The output o for a perceptron with a neuron, that has the activation function f, given input X is calculated like this:
+
+\[o(X) = f(\sum_{i=0}^n w_i x_i + b)\]
+
+The error for the perceptron for a given input X and the correct output y is simple to calculate and it is easy to find the gradient. If one uses MSE as error function the error is:
+
+\[err(W,x,y) = MSE(o(x)-y)) = (o(x)-y)^2\]
+
+The gradient in weight space is:
+
+\[\Delta W = \frac{\partial err(W,x,y)}{\partial W} = \frac{\partial (o(X)-y)^2}{\partial W}
+= 2 (o(X) - y) \frac{\partial o(X)}{\partial W}\]
+
+\(\Delta W\) is a vector in weight space. Now one can update with a slightly modified version of the classical gradient descend rule (also called the delta-rule):
+
+\[W = W - \eta\Delta W\]
+
+\(\eta\) is called the learning rate. With bigger \(\eta\) the network learns faster but oscillates more.
+The Perceptron only has the ability to learn linear functions. The most popular example that it can't solve is the xor-problem.
+
+\subsection{Multi-layered Perceptron}
+
+In order to learn more complicated functions the multi layer perceptrons (MLPs) were invented. They consist of n input neurons, m output neurons and at least on hidden layer. The outputs of the neurons of a layer will be propagated to the neurons of the next layer. In case of a fully connected layer every neuron of the overlying layer is propagated to every neuron of the underlying layer. But not every Layer has to be fully connected. Every of this connections between two layers has a weight. Additionally every neuron has a bias again.
+Like the single layer perceptron the MLP is trained by iteratively changing the weights in order to decrease the error propability. Here it is harder to determine, which weight has which influence on the error, because there isn't a direct connection between the input and the output neurons. Thats why we need to backpropagate the error through the net.
+For this purpose the input x is propagated forward through the net. we look at the weights \(w_{ikj}\) seperately, which represent the weight of the connection between layer i neuron k to layer i+1 h neuron j. Layer 0 is the output layer. \(o_{ik}\) is the output of neuron k in layer i. \(net_{ik}\) is the comulated input of neuron k in layer i. The weight gradient for the output layer is calculated like:
+
+\[\Delta w_{0kj} = \frac{\partial err(W,y,o)}{\partial w_{0kj}} 
+= \frac{\partial err(W,y,x)}{\partial o_{0k}}\frac{\partial o_{0k}}{\partial net_{0k}}\frac{\partial net_{0k}}{\partial w_{0kj}}
+= \delta_{0k} o_{1j}\]
+
+The first part of \(\delta_{0k}\) can be calculated, because the current weights W are known, the ground truth y is known and \(o_{0k}(x)\) is known from the forward propagation. The second part of \(\delta_{0k}\) is the derivation of the activation function at \(net_{0k}\). \(net_{0k}\) and \(o_{1j}\) are also known from the forward propagation. Then the weight gradient for the overlaying layers is calculated iteratively with increasing i like:
+
+\[\Delta w_{ikj} = 
+\frac{\partial err(W,y,o)}{\partial w_{ikj}}
+= \frac{\partial err(W,y,x)}{\partial o_{ik}}\frac{\partial o_{ik}}{\partial net_{ik}}\frac{\partial net_{ik}}{\partial w_{ikj}}\]
+\[= (\sum_{l \in Down(i,k)}
+\frac{\partial err(W,y,x)}{\partial o_{(i-1)l}}
+\frac{\partial o_{(i-1)l}}{\partial net_{(i-1)l}}
+\frac{\partial net_{(i-1)l}}{\partial o_{ik}})
+\frac{\partial o_{ik}}{\partial net_{ik}}o_{(i+1)j}\]
+\[= (\sum_{l \in Down(i,k)}\delta_{(i-1)l}w_{(i-1)lk})
+\frac{\partial o_{ik}}{\partial net_{ik}}o_{(i+1)j}
+=\delta_{ik} o_{(i+1)j}\]
+
+Again all variables are known because of the forwardpropagation and the past iterations. The iteration ends with reaching the layer beneath the input layer. \(o_{0k}(x)\) of the input layer is the x of the training data. After finishing the backpropagation the gradient for the given training data is known and gradient descend can be used.
+
+\subsection{Convolutional Neural Networks}
+
+Because of the massive amount of data and calculation time that is needed to train MLPs due to the curse of dimensionality and because of their tendency to overfit fast neural networks weren't used that much a few years ago. Then AlexNet was developed and won the ImageNet challange. It solved the problems mentioned before by using a convolutional neural network. Convolutional neural networks are using filters with shared weights that extract features. This is analog to the visual cortex in the human brain. Because of the shared weights the amount of weights is reduced massively  so that much deeper networks can be build with the same data without overfitting. The idea of convolutional neural networks is, that there are some information in the data that are important and others aren't. E.g. to determine what is in a picture, edges are much more important then a part of a monochrome area. Another advantage of CNNs compared to traditional (fully connected) MLPs is that CNNs notice spatial relations. The idea behind sharing the weights of the filters is, that if a feature is worth to detect in one place of a picture it is also worth to detect in antoher place.
+
+\textbf{Convolutional Layers}
+
+Typically the layers of convolutional neural networks are 3 dimensional tensors of neurons with the dimensions width, height and depth. Neurons with the same width and height have the same receptive field. Neurons with the same depht detect the same kind of feature. The most common activation function for convolutional layers is Relu because it converges very fast. CNN layers use a few more additional hyperparamters then tradional MLPs. The first parameter the size (fheight,fwidth) of the receptive fields. Another is the depth which decides how many features will be extrapolated per receptive field. The third hyperparamters is called stride (strx,stry). It decides how many pixels every filter is moved at a time. The last parameter is the zero padding (pad). It surrounds the input with zeros in order to apply the filter also to the border of the input. What actually is learned by the CNN is the filter for every feature. So the count of weights for one layer of a CNN is fheight * fwidth * depth. If the input picture is of size (n,m) then the output is of size ((n + 2 * pad) / strx, (m + 2 * pad) / stry). The famous CNNs like AlexNet, ResNet and GoogleLeNet only differ in the count of layers and the hyperparamters set for these layers.
+
+blupp???
+
+\textbf{MaxPooling}
+
+Another important technique used for CNNs are pooling layers. Their task is a downsampling of the data. This is necassary to handle the curse of dimensionality. It also prevent overfitting. What is done with overfitting is merging neighboured inputs. The most popular pooling technique is MaxPooling because it has shown to be the most effective in practice. What is done in MaxPooling is determine the maximum of the inputs that are merged and use it as output. The shape of the inputs that are merged is most commonly (2,2), which means that the size of the input is reduced to a fourth. 
+
+
+recently in zB resnets und ssd, conv stride 1 
+
+\textbf{Fully Connected Layers}
+
+
+
+\textbf{Softmax}
+
+For classification tasks the last layer of a CNN is a fully connected layer with the softmax activation function in order to normalize the output of the convolutional layers.
+
+\textbf{Loss Functions}
+
+Because of the fact that using MSE as error function leads to slow convergence on normalized input cross entropy (CE) is used for classification tasks.
+mathematic explanation?
+
+\section{Recurrent Neural Networks}
+
+Recurrent Neural Networks (RNNs) are a type of neural nets that note the past inputs to calculate the output of the current input. Because of this they are usefull to process list like data like handwritten texts or audio tracks where it is practical to know the context. This context is saved as a cell state. RNNs are trained via backpropagation through that works basically the same way like normal backpropagation, but propagates the error also back to the former input.
+
+\subsection{Vanilla RNNs}
+
+\subsection{LSTMs}
+
+The problem about classical RNNs is, that they only care about the close context. Sometimes, for example for understanding a text, it is important to know the longer context. In case of understanding a text it is helpfull to not only know the word before but also know the subject of the sentence.
+
+\begin{figure}[H]
+  \centering
+      \includegraphics[width=1.0\textwidth]{images/LSTM3-chain.png}
+  \caption{structure of LSTM, http://colah.github.io/posts/2015-08-Understanding-LSTMs/}
+\end{figure}
+
+Thats why a special kind of RNNs, called Long Short Term Memory neural networks (LSTMs), additionally to the cell state for the short term memory have a cell state for long term memory. This long term cell state are is by gates. The forget gate decides which memory will be deleted and the add gate decides what memory will be added. In the original LSTM architecture (et. al. ~\cite{lstm}) the add gate is devided into decision and candidate gate but there are many variations.
+
+\section{Attention Modules}
+
+Even with LSTMs there is the problem, that the full state has to be encoded into a fixed size vector. Thats why it might be useful to look at the whole input sequence. Looking at the whole input sequence with full attention would be computionaly inefficient. A solution to that problem is to weight the input states. States that are important to determine the current output  are weighted high and states which aren't are weighted low. This mechanism is similar to the visual attention mechanism of the human. Thats the reason why it is called attention module.
+
+
+\section{How neural Networks work}

@@ -51,22 +51,29 @@ def main(args):
             print(batchfile + ' loaded!')
             preds = []
             images = batch['images']
-            train_k = 20
-            while images.shape[1] * images.shape[2] * train_k > model.capacity:
-                train_k = train_k - 1
-            if train_k == 0:
+            minibatchsize = 20
+            #code.interact(local=dict(globals(), **locals()))
+            while images.shape[1] * images.shape[2] * minibatchsize > model.capacity:
+                minibatchsize = minibatchsize - 1
+            if minibatchsize == 0:
+                print('skip')
                 continue
-            model.minibatchsize = train_k
-            for j in range(len(images) / model.minibatchsize):
+            for j in range(len(images) / minibatchsize + 1):
                 imgs = []
-                for b in range(j*model.minibatchsize, min((j+1)*model.minibatchsize,len(images))):
+                for b in range(j*minibatchsize, min((j+1)* \
+                        minibatchsize,len(images))):
                     imgs.append(images[b])
+                if imgs == []:
+                    continue
                 imgs = np.array(imgs)
+                #print(str(j) + ' : ' + str(minibatchsize) + ' : ' + str(images.shape[0]) + \
+                #    ' : ' + str(imgs.shape))
                 feed_dict={model.images_placeholder: imgs}
-                pred = sess.run(model.containedClassesPrediction, \
+                pred = sess.run(model.features, \
                     feed_dict=feed_dict)
                 preds.append(pred)
             preds = np.concatenate(preds)
+            assert preds.shape[0] == images.shape[0] != 0 
             with open(output_dir + "/" + batchfile, 'w') as fout:
                 np.savez(fout, images=preds, labels=batch['labels'], \
                     num_classes=batch['num_classes'], \
