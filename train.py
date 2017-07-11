@@ -74,7 +74,7 @@ def loadBatch(batch_dir, batch_names, batch_it, traintype, capacity):
             new_iteration = (batch_it + 1 >= len(batch_names))
             batch_it = (batch_it + 1) % len(batch_names)
             assert batch_it != batch_it_old, 'capacity to small for training data'
-    if traintype in [0,3,4]:
+    if traintype in [0,3,4,5]:
         batch_labels = batch['labels']
     elif traintype in [1,2]:
         batch_labels = batch['contained_classes_list']
@@ -160,7 +160,7 @@ def main(args):
         if params.traintype == 0:
             labels_placeholder = tf.placeholder(dtype=tf.int32, \
                 shape=[None,max_num_tokens])
-            loss = model.loss(model.network, labels_placeholder)
+            loss = model.loss(model.prediction, labels_placeholder)
             classes = model.classes
             images_placeholder = model.images_placeholder
         elif params.traintype == 1:
@@ -184,6 +184,12 @@ def main(args):
             classes = tf.constant(0)
             images_placeholder = model.images_placeholder2
         elif params.traintype == 4:
+            labels_placeholder = tf.placeholder(dtype=tf.int32, \
+                shape=[None,max_num_tokens])
+            loss = model.loss(model.prediction, labels_placeholder)
+            classes = tf.constant(0)
+            images_placeholder = model.images_placeholder
+        elif params.traintype == 5:
             labels_placeholder = tf.placeholder(dtype=tf.int32, \
                 shape=[None,max_num_tokens])
             loss = model.loss(model.prediction, labels_placeholder)
@@ -240,7 +246,7 @@ def main(args):
                         = sess.run([train_op, loss, classes], \
                         feed_dict=feed_dict)
                     
-                    if model.train_mode >= 3:
+                    if model.train_mode in [3,4,5]:
                         train_minibatch_accuracy = 1.0
                     else:
                         train_minibatch_accuracy, train_stats = calculateAccuracy( \
@@ -270,7 +276,7 @@ def main(args):
                     = sess.run([loss, classes], \
                     feed_dict=feed_dict)
                 
-                if model.train_mode >= 3:
+                if model.train_mode in [3,4,5]:
                     val_minibatch_accuracy = 1.0
                 else:
                     val_minibatch_accuracy, val_stats = calculateAccuracy( \
