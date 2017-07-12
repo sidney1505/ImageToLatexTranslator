@@ -54,7 +54,7 @@ def calculateMinibatchsize(image, capacity):
         minibatchsize = minibatchsize - 1
     return minibatchsize
 
-def loadBatch(batch_dir, batch_names, batch_it, traintype, capacity):
+def loadBatch(batch_dir, batch_names, batch_it, model, capacity):
     batch = None
     batch_images = None
     new_iteration = False
@@ -74,9 +74,9 @@ def loadBatch(batch_dir, batch_names, batch_it, traintype, capacity):
             new_iteration = (batch_it + 1 >= len(batch_names))
             batch_it = (batch_it + 1) % len(batch_names)
             assert batch_it != batch_it_old, 'capacity to small for training data'
-    if traintype in [0,3,4,5]:
+    if model.used_loss == 'label':
         batch_labels = batch['labels']
-    elif traintype in [1,2]:
+    elif model.used_loss == 'classes':
         batch_labels = batch['contained_classes_list']
     classes_true = batch['contained_classes_list']
     new_iteration = (batch_it + 1 >= len(batch_names))
@@ -132,14 +132,9 @@ def main(args):
 
     # creates the tensorflow session were the tensorflow variables can live
     with tf.Graph().as_default():
-        sess = tf.Session()
-        print('session created')
         # load/create the model
-        model = None
         if params.load_model:
             model = models.wysiwyg.load(params.model_dir, sess)
-            #code.interact(local=dict(globals(), **locals()))
-            # intialise uninitialised variables???
         else:
             # create the model directory
             if not os.path.exists(params.model_dir):
@@ -149,67 +144,13 @@ def main(args):
             if not os.path.exists(params.model_dir):
                 os.makedirs(params.model_dir)
             model = Model(num_classes, max_num_tokens, params.model_dir, capacity= \
-                params.capacity, train_mode=params.traintype)       
-
-        # define used groundtruth, used loss function and used train_op
-        labels_placeholder = None
-        loss = None
-        classes = None
-        images_placeholder = None
-        train_op = tf.constant(0)
-        if params.traintype == 0:
-            labels_placeholder = tf.placeholder(dtype=tf.int32, \
-                shape=[None,max_num_tokens])
-            loss = model.loss(model.prediction, labels_placeholder)
-            classes = model.classes
-            images_placeholder = model.images_placeholder
-        elif params.traintype == 1:
-            labels_placeholder = tf.placeholder(dtype=tf.float32, \
-                shape=[None,num_classes])
-            loss = model.containedClassesLoss(model.containedClassesPrediction, \
-                labels_placeholder)
-            classes = model.classes
-            images_placeholder = model.images_placeholder
-        elif params.traintype == 2:
-            labels_placeholder = tf.placeholder(dtype=tf.float32, \
-                shape=[None,num_classes])
-            loss = model.containedClassesLoss( \
-                model.containedClassesPredictionRefined, labels_placeholder)
-            classes = model.classesRefined
-            images_placeholder = model.images_placeholder2
-        elif params.traintype == 3:
-            labels_placeholder = tf.placeholder(dtype=tf.int32, \
-                shape=[None,max_num_tokens])
-            loss = model.loss(model.prediction, labels_placeholder)
-            classes = tf.constant(0)
-            images_placeholder = model.images_placeholder2
-        elif params.traintype == 4:
-            labels_placeholder = tf.placeholder(dtype=tf.int32, \
-                shape=[None,max_num_tokens])
-            loss = model.loss(model.prediction, labels_placeholder)
-            classes = tf.constant(0)
-            images_placeholder = model.images_placeholder
-        elif params.traintype == 5:
-            labels_placeholder = tf.placeholder(dtype=tf.int32, \
-                shape=[None,max_num_tokens])
-            loss = model.loss(model.prediction, labels_placeholder)
-            classes = tf.constant(0)
-            images_placeholder = model.images_placeholder
-        if params.phase == 'training':
-            train_op = model.training(loss)
-        # initialises all variables
-        if not params.load_model:
-            init = tf.global_variables_initializer()
-            sess.run(init)
-        # intial save! save seeds??
-        model.save(sess)
-        
+                params.capacity, train_mode=params.traintype)     
         # creates the first validation batch
         val_batch_it = 0
         #code.interact(local=dict(globals(), **locals()))
         val_batch_images, val_minibatchsize, val_batch_it, val_batch_labels,_, \
             val_classes_true = loadBatch(params.val_batch_dir, val_batch_names, \
-            val_batch_it, params.traintype, model.capacity)
+            val_batch_it, model, model.capacity)
         # validation minibatch iterator needs to be created
         val_minibatch_it = 0
         val_stats = np.zeros(model.num_classes + 1)
@@ -219,7 +160,7 @@ def main(args):
             train_batch_images, train_minibatchsize, train_batch_it, \
                 train_batch_labels, new_train_iteration, train_batch_classes_true = \
                 loadBatch(params.train_batch_dir, train_batch_names, train_batch_it, \
-                params.traintype, model.capacity)
+                model, model.capacity)
             val_minibatch_loss_old = float("inf")
             train_stats = np.zeros(model.num_classes + 1)
             while not new_train_iteration: # randomise!!!
@@ -236,18 +177,13 @@ def main(args):
                     train_minibatch_classes_true = createMinibatch( \
                         train_batch_classes_true, \
                         train_minibatch_it, train_minibatchsize)
-                    # create the dict, that is fed into the placeholders
-                    #code.interact(local=dict(globals(), **locals()))
-                    feed_dict={images_placeholder: train_minibatch_images, \
-                        labels_placeholder: train_minibatch_labels}
-                    #code.interact(local=dict(globals(), **locals()))
+                    #
                     print(train_minibatch_images.shape)
                     _, train_minibatch_loss_value, train_minibatch_classes_pred \
-                        = sess.run([train_op, loss, classes], \
-                        feed_dict=feed_dict)
+                        = model.trainStep(train_minibatch_images, train_minibatch_labels)
                     
-                    if model.train_mode in [3,4,5]:
-                        train_minibatch_accuracy = 1.0
+                    if model.classes_gold == None:
+                        train_minibatch_accuracy = -1.0
                     else:
                         train_minibatch_accuracy, train_stats = calculateAccuracy( \
                             train_minibatch_classes_pred, train_minibatch_classes_true, \
@@ -269,15 +205,12 @@ def main(args):
                     val_minibatch_it, val_minibatchsize)
                 val_minibatch_classes_true = createMinibatch( \
                     val_classes_true, val_minibatch_it, val_minibatchsize)
-                # create the dict, that is fed into the placeholders
-                feed_dict={images_placeholder: val_minibatch_images, \
-                    labels_placeholder: val_minibatch_labels}
+                #
                 val_minibatch_loss_value, val_minibatch_classes_pred \
-                    = sess.run([loss, classes], \
-                    feed_dict=feed_dict)
+                    = model.valStep(val_minibatch_images, val_minibatch_labels)
                 
-                if model.train_mode in [3,4,5]:
-                    val_minibatch_accuracy = 1.0
+                if model.classes_gold == None:
+                    val_minibatch_accuracy = -1.0
                 else:
                     val_minibatch_accuracy, val_stats = calculateAccuracy( \
                         val_minibatch_classes_pred, val_minibatch_classes_true, val_stats)
@@ -300,19 +233,19 @@ def main(args):
                     val_batch_images, val_minibatchsize, val_batch_it, \
                         val_batch_labels,_,val_classes_true = \
                         loadBatch(params.val_batch_dir, \
-                        val_batch_names, val_batch_it, params.traintype,\
+                        val_batch_names, val_batch_it, model,\
                         model.capacity)
                     val_minibatch_it = 0                
                 train_batch_images, train_minibatchsize, train_batch_it, \
                 train_batch_labels, new_train_iteration, train_batch_classes_true = \
                     loadBatch(params.train_batch_dir, train_batch_names, \
-                    train_batch_it, params.traintype, model.capacity)
+                    train_batch_it, model, model.capacity)
                 if val_minibatch_loss_old < val_minibatch_loss_value:
                     print('decrease learning rate!')
                     model.learning_rate = model.learning_rate * 0.5
+                else:
+                    model.save()
                 val_minibatch_loss_old = val_minibatch_loss_value
-                # saves the model
-                model.save(sess)
         sess.close()
 
 if __name__ == '__main__':

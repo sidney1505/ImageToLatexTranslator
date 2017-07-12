@@ -1,15 +1,14 @@
-import code
-import os
-import shutil
+import code, os, shutil, tflearn
 import tensorflow as tf
-import tflearn
 import numpy as np
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.conv import conv_2d, max_pool_2d
+import WYSIWYGCNN, BaselineEncoder, BaselineDecoder, SimpleAttentionModule, FullyConnected
+import WYSIWYGEncoder, WYSIWYGDecoder
 
 class Model:
     def __init__(self,  num_classes, max_num_tokens, model_dir, \
-            capacity=30000, learning_rate=0.001, nr_epochs=50, train_mode=1):
+            capacity=30000, learning_rate=0.001, nr_epochs=50, train_mode=1, loaded=False):
         # intialise class variables
         self.num_classes = num_classes
         self.max_num_tokens = max_num_tokens
@@ -30,400 +29,104 @@ class Model:
                     max_num_tokens=max_num_tokens, \
                     capacity=capacity, learning_rate=learning_rate, \
                     nr_epochs=nr_epochs, \
-                    model_dir=model_dir)      
-        self.weights = {
-            # 5x5 conv, 1 input, 32 outputs
-            'wconv1': tf.Variable(tf.random_normal([3, 3, 1, 64]), name='wconv1'),
-            'bconv1': tf.Variable(tf.random_normal([64]), name='bconv1'),
-            # 5x5 conv, 32 inputs, 64 outputs
-            'wconv2': tf.Variable(tf.random_normal([3, 3, 64, 128]), name='wconv2'),
-            'bconv2': tf.Variable(tf.random_normal([128]), name='bconv2'),
-            # 5x5 conv, 1 input, 32 outputs
-            'wconv3': tf.Variable(tf.random_normal([3, 3, 128, 256]), name='wconv3'),
-            'bconv3': tf.Variable(tf.random_normal([256]), name='bconv3'),
-            # 5x5 conv, 32 inputs, 64 outputs
-            'wconv4': tf.Variable(tf.random_normal([3, 3, 256, 256]), name='wconv4'),
-            'bconv4': tf.Variable(tf.random_normal([256]), name='bconv4'),
-            # 5x5 conv, 1 input, 32 outputs
-            'wconv5': tf.Variable(tf.random_normal([3, 3, 256, 512]), name='wconv5'),
-            'bconv5': tf.Variable(tf.random_normal([512]), name='bconv5'),
-            # 5x5 conv, 32 inputs, 64 outputs
-            'wconv6': tf.Variable(tf.random_normal([3, 3, 512, 512]), name='wconv6'),
-            'bconv6': tf.Variable(tf.random_normal([512]), name='bconv6'),
-            'wfc': tf.Variable(tf.random_normal([512,self.num_classes]), name='wfc1'),
-            'bfc': tf.Variable(tf.random_normal([self.num_classes]), name='bfc1'),
-            'wfc1': tf.Variable(tf.random_normal([512,1024]), name='wfc1'),
-            'bfc1': tf.Variable(tf.random_normal([1024]), name='bfc1'),
-            'wfc2': tf.Variable(tf.random_normal([1024,self.num_classes]), \
-                name='wfc2'),
-            'bfc2': tf.Variable(tf.random_normal([self.num_classes]), name='bfc2'),
-        }
-        # create the network graph
+                    model_dir=model_dir)
+        # create the network graph depending on train mode
+        self.weights = {}
+        self.classes_prediction = tf.constant(-1)
+        self.classes_gold = None
         if train_mode == 0:            
-            self.images_placeholder = tf.placeholder(dtype=tf.float32, \
+            self.input = tf.placeholder(dtype=tf.float32, \
                 shape=[None, None, None, 1])
-            self.features = self.createCNNModel(self.images_placeholder)
-            self.features = tflearn.layers.normalization.batch_normalization(self.features)
-            self.featuresRefined = self.createEncoderLSTM(self.features)
-            self.featuresRefined = tflearn.layers.normalization.batch_normalization( \
-                self.featuresRefined)
-            self.prediction = self.createSimpleAttentionModule(self.featuresRefined)            
-            self.containedClassesPrediction = self.createFullyConvolutional( \
-                self.features)
-            self.classes = tf.sigmoid(self.containedClassesPrediction)
-            self.containedClassesPredictionRefined = \
-                self.createFullyConvolutional2(self.features)
-            self.classesRefined = tf.sigmoid( \
-                self.containedClassesPredictionRefined)
+            self.label_gold = tf.placeholder(dtype=tf.int32, \
+                shape=[None,max_num_tokens])
+            self.classes_gold = tf.placeholder(dtype=tf.int32, \
+                shape=[None,num_classes])
+            self.features = WYSIWYGCNN.createCNNModel(self, self.input)
+            self.featuresRefined = WYSIWYGEncoder.createEncoderLSTM(self, self.features)
+            self.label_prediction = WYSIWYGDecoder.createDecoderLSTM(self, \
+                self.featuresRefined)            
+            self.classes_prediction = tf.sigmoid(FullyConnected.createFullyConnected(self, \
+                self.features))
+            self.useLabelLoss()
         elif train_mode == 1:
-            self.images_placeholder = tf.placeholder(dtype=tf.float32, \
+            self.input = tf.placeholder(dtype=tf.float32, \
                 shape=[None, None, None, 1])
-            self.features = self.createCNNModel(self.images_placeholder)           
-            self.containedClassesPrediction = self.createFullyConvolutional( \
+            self.classes_gold = tf.placeholder(dtype=tf.float32, \
+                shape=[None,num_classes])
+            self.features = WYSIWYGCNN.createCNNModel(self, self.input)           
+            self.classes_prediction = FullyConnected.createFullyConnected(self, \
                 self.features)
-            self.classes = tf.sigmoid(self.containedClassesPrediction)
+            self.useClassesLoss()
         elif train_mode == 2:
-            self.weights.update({
-                'wfc3': tf.Variable(tf.random_normal([512,1000]), name='wfc3'),
-                'bfc3': tf.Variable(tf.random_normal([1000]), name='bfc3'),
-                'wfc4': tf.Variable(tf.random_normal([1000,self.num_classes]), \
-                    name='wfc4'),
-                'bfc4': tf.Variable(tf.random_normal([self.num_classes]), name='bfc4'),
-            })
-            self.images_placeholder2 = tf.placeholder(dtype=tf.float32, shape= \
+            self.input = tf.placeholder(dtype=tf.float32, shape= \
                 [None, None, None, 512])
-            self.featuresRefined = self.createEncoderLSTM(self.images_placeholder2)
-            self.containedClassesPredictionRefined = \
-                self.createFullyConvolutional2(self.featuresRefined)
-            self.classesRefined = tf.sigmoid(self.containedClassesPredictionRefined)
+            self.classes_gold = tf.placeholder(dtype=tf.float32, \
+                shape=[None,num_classes])
+            self.featuresRefined = WYSIWYGEncoder.createEncoderLSTM(self, self.input)
+            self.classes_prediction = FullyConnected.createFullyConnected(self, \
+                self.featuresRefined)
+            self.useClassesLoss()
         elif train_mode == 3:
-            self.images_placeholder2 = tf.placeholder(dtype=tf.float32, shape= \
+            self.input = tf.placeholder(dtype=tf.float32, shape= \
                 [None, None, None, 512])
-            self.prediction = self.createDecoderLSTM(self.images_placeholder2)
+            self.label_gold = tf.placeholder(dtype=tf.int32, \
+                shape=[None,max_num_tokens])
+            self.label_prediction = WYSIWYGDecoder.createDecoderLSTM(self, self.input)
+            self.useLabelLoss()
         elif train_mode == 4:
-            self.images_placeholder = tf.placeholder(dtype=tf.float32, shape= \
+            self.input = tf.placeholder(dtype=tf.float32, shape= \
                 [None, None, None, 512])
-            self.prediction = self.createSimpleAttentionModule(self.images_placeholder)
+            self.label_gold = tf.placeholder(dtype=tf.int32, \
+                shape=[None,max_num_tokens])
+            self.label_prediction = SimpleAttentionModule.createSimpleAttentionModule(self, \
+                self.input)
+            self.useLabelLoss()
         elif train_mode == 5:
-            self.images_placeholder = tf.placeholder(dtype=tf.float32, shape= \
+            self.input = tf.placeholder(dtype=tf.float32, shape= \
                 [None, None, None, 512])
-            self.encoded = self.createBaselineEncoder(self.images_placeholder)
-            self.prediction = self.createBaselineDecoder(self.encoded)
+            self.label_gold = tf.placeholder(dtype=tf.int32, \
+                shape=[None,max_num_tokens])            
+            self.encoded = BaselineEncoder.createBaselineEncoder(self, \
+                self.input)
+            self.label_prediction = BaselineDecoder.createBaselineDecoder(self, self.encoded)
+            self.useLabelLoss()
+        assert self.input != None
+        assert self.loss != None
+        self.useMomentumOptimizer()
         #
+        self.session = tf.Session()
         self.saver = tf.train.Saver()
+        # initialises all variables
+        if not loaded:
+            init = tf.global_variables_initializer()
+            self.session.run(init)
+        # intial save! save seeds??
+        self.save()
 
-    def createSimpleDecoder(self, features):
-        batchsize = tf.shape(features)[0]
-        features = tflearn.layers.conv.global_avg_pool(features) # batchsize x num_features
-        rnn_cell = tf.contrib.rnn.LSTMCell(512)
-        rnn_cell_state = rnn_cell.zero_state(batch_size=batchsize, dtype=tf.float32)
+    def useLabelLoss(self):
+        self.groundtruth = self.label_gold
+        label_prediction = tf.transpose(self.label_prediction, [1,0,2])
+        label_gold = tf.transpose(self.label_gold, [1,0])
         #code.interact(local=dict(globals(), **locals())) 
-        outputs = tf.TensorArray(dtype=tf.float32, size=tf.constant(self.max_num_tokens))
-        params = [tf.constant(0), features, outputs, rnn_cell_state]
-        while_condition = lambda token,_a,_b,_c: tf.less(token, self.max_num_tokens)
-        def body(token, features, outputs, rnn_cell_state):
-            output, rnn_cell_state = rnn_cell.__call__(features, rnn_cell_state)
-            outputs = outputs.write(token, output)        
-            return [tf.add(token, 1), output, outputs, rnn_cell_state]
-        _a,_b,outputs,_c= tf.while_loop(while_condition, body, params)
-        decoded = outputs.stack() # max_num_tokens x batchsize x num_features
-        decoded = tf.transpose(decoded, [1,0,2]) # batchsize x max_num_tokens x num_features
-        self.weights.update({
-            'wfc': tf.Variable(tf.random_normal([512,self.num_classes]), name='wfc'),
-            'bfc': tf.Variable(tf.random_normal([self.num_classes]), name='bfc')
-        })
-        decoded = tf.tensordot(decoded,self.weights['wfc'],[[2],[0]])
-        decoded = decoded + self.weights['bfc']
-        prediction = tf.nn.softmax(decoded) # batchsize x max_num_tokens x num_classes
-        return prediction # batchsize x max_num_tokens x num_classes
+        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label_gold, \
+            logits=label_prediction)
+        self.loss = tf.reduce_mean(loss)
+        self.label_gold = tf.nn.softmax(self.label_prediction)
+        self.prediction = self.label_prediction
+        self.used_loss = 'label'
 
-    def createSimpleAttentionModule(self, features):
-        batchsize = tf.shape(features)[0]
-        rnn_cell = tf.contrib.rnn.BasicLSTMCell(1024)
-        rnn_cell_state = rnn_cell.zero_state(batch_size=batchsize, dtype=tf.float32)
-        self.weights.update({
-            'watt': tf.Variable(tf.random_normal([2048,512]), name='watt'),
-            'batt': tf.Variable(tf.random_normal([512]), name='batt')
-        })
-        #code.interact(local=dict(globals(), **locals())) 
-        outputs = tf.TensorArray(dtype=tf.float32, size=tf.constant(self.max_num_tokens))
-        params = [tf.constant(0), features, outputs, rnn_cell_state]
-        def while_condition(token,_a,_b,_c):
-            return tf.less(token, self.max_num_tokens)
-        def body(token, features, outputs, rnn_cell_state):
-            #code.interact(local=dict(globals(), **locals()))
-            batchsize = tf.shape(features)[0]
-            # batch x height x width
-            # calculate e
-            h1,h2 = rnn_cell_state # richtiger teil???
-            # code.interact(local=dict(globals(), **locals()))
-            h = tf.concat([h1,h2],1)
-            h = tf.tensordot(h,self.weights['watt'],[[1],[0]]) + self.weights['batt']
-            h = tf.tanh(h)
-            inner_outputs = tf.TensorArray(dtype=tf.float32, \
-                size=batchsize)
-            inner_params = [tf.constant(0), h, features, inner_outputs]
-            def inner_while_condition(batch, h, features, inner_outputs):
-                return tf.less(batch, batchsize)
-            def inner_body(batch, h, features, inner_outputs):
-                inner_outputs = inner_outputs.write(batch, \
-                    tf.tensordot(h[batch],features[batch],[[0],[2]]))
-                return [batch + 1, h, features, inner_outputs]
-            _,_,_,inner_outputs = tf.while_loop(inner_while_condition, \
-                inner_body,inner_params)
-            e = inner_outputs.stack()
-            # own softmax
-            shape = tf.shape(e)
-            alpha = tf.reshape(e,[shape[0],shape[1]*shape[2]])
-            alpha = tf.nn.softmax(alpha)
-            alpha = tf.reshape(e,[shape[0],shape[1],shape[2]])
-            # calculate the context
-            inner_outputs = tf.TensorArray(dtype=tf.float32, \
-                size=batchsize)
-            inner_params = [tf.constant(0), alpha, features, inner_outputs]
-            def inner_while_condition(batch, alpha, features, inner_outputs):
-                return tf.less(batch, batchsize)
-            def inner_body(batch, alpha, features, inner_outputs):
-                inner_outputs = inner_outputs.write(batch, \
-                    tf.tensordot(alpha[batch],features[batch],[[0,1],[0,1]]))
-                return [batch + 1, alpha, features, inner_outputs]
-            _,_,_,inner_outputs = tf.while_loop(inner_while_condition, \
-                inner_body,inner_params)
-            context = inner_outputs.stack()
-            # apply the lstm
-            output, rnn_cell_state = rnn_cell.__call__(context, rnn_cell_state)
-            outputs = outputs.write(token, output)
-            #code.interact(local=dict(globals(), **locals()))
-            return [token + 1, features, outputs, rnn_cell_state]
-        _,_,outputs,_= tf.while_loop(while_condition, body, params)
-        decoded = outputs.stack() # max_num_tokens x batchsize x num_features
-        #code.interact(local=dict(globals(), **locals()))
-        decoded = tf.transpose(decoded, [1,0,2]) # batchsize x max_num_tokens x num_features
-        self.weights.update({
-            'wfc': tf.Variable(tf.random_normal([1024,self.num_classes]), name='wfc'),
-            'bfc': tf.Variable(tf.random_normal([self.num_classes]), name='bfc')
-        })
-        decoded = tf.tensordot(decoded,self.weights['wfc'],[[2],[0]])
-        decoded = decoded + self.weights['bfc']
-        prediction = tf.nn.softmax(decoded) # batchsize x max_num_tokens x num_classes
-        return prediction # batchsize x max_num_tokens x num_classes
+    def useClassesLoss(self):
+        self.groundtruth = self.classes_gold
+        loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.classes_gold, \
+            logits=self.classes_prediction)
+        self.loss = tf.reduce_mean(loss)
+        self.classes_prediction = tf.sigmoid(self.classes_prediction)
+        self.prediction = self.classes_prediction
+        self.used_loss = 'classes'
 
-    def createCNNModel(self, network):
-        network = tf.nn.conv2d(network, self.weights['wconv1'], strides=[1,1,1,1], \
-            padding='SAME')
-        network = tf.nn.bias_add(network, self.weights['bconv1'])
-        network = max_pool_2d(network, 2, strides=2)
-        network = tf.nn.relu(network)
-
-        network = tf.nn.conv2d(network, self.weights['wconv2'], strides=[1,1,1,1], \
-            padding='SAME')
-        network = tf.nn.bias_add(network, self.weights['bconv2'])
-        network = max_pool_2d(network, 2, strides=2)
-        network = tf.nn.relu(network)
-
-        network = tf.nn.conv2d(network, self.weights['wconv3'], strides=[1,1,1,1], \
-            padding='SAME')
-        network = tf.nn.bias_add(network, self.weights['bconv3'])
-        network = tflearn.layers.normalization.batch_normalization(network) #same as torch?
-        network = tf.nn.relu(network)
-
-        network = tf.nn.conv2d(network, self.weights['wconv4'], strides=[1,1,1,1], \
-            padding='SAME')
-        network = tf.nn.bias_add(network, self.weights['bconv4'])
-        network = max_pool_2d(network, [2,1], strides=[2,1])
-        network = tf.nn.relu(network)
-
-        network = tf.nn.conv2d(network, self.weights['wconv5'], strides=[1,1,1,1], \
-            padding='SAME')
-        network = tf.nn.bias_add(network, self.weights['bconv5'])
-        network = tflearn.layers.normalization.batch_normalization(network) #same as torch?
-        network = max_pool_2d(network, [1,2], strides=[1,2])
-        network = tf.nn.relu(network)
-
-        network = tf.nn.conv2d(network, self.weights['wconv6'], strides=[1,1,1,1], \
-            padding='SAME')
-        network = tf.nn.bias_add(network, self.weights['bconv6'])
-        network = tflearn.layers.normalization.batch_normalization(network)
-        network = tf.nn.relu(network)
-        return network
-
-    def createFullyConvolutional(self, network):
-        network = tflearn.layers.conv.global_avg_pool(network)
-        network = tf.tensordot(network,self.weights['wfc1'],[[1],[0]])
-        network = network + self.weights['bfc1']
-        network = tf.nn.relu(network)
-        network = tf.tensordot(network,self.weights['wfc2'],[[1],[0]])
-        network = network + self.weights['bfc2']
-        return network
-
-    def createFullyConvolutional2(self, network):
-        self.weights.update({
-            'wfc3': tf.Variable(tf.random_normal([512,1000]), name='wfc3'),
-            'bfc3': tf.Variable(tf.random_normal([1000]), name='bfc3'),
-            'wfc4': tf.Variable(tf.random_normal([1000,self.num_classes]), \
-                name='wfc4'),
-            'bfc4': tf.Variable(tf.random_normal([self.num_classes]), name='bfc4'),
-        })
-        #code.interact(local=dict(globals(), **locals())) 
-        network = tflearn.layers.conv.global_avg_pool(network)
-        network = tf.tensordot(network,self.weights['wfc3'],[[1],[0]])
-        network = network + self.weights['bfc3']
-        network = tf.nn.relu(network)
-        network = tf.tensordot(network,self.weights['wfc4'],[[1],[0]])
-        network = network + self.weights['bfc4']
-        return network
-
-    def createBaselineEncoder(self,features):
-        shape = tf.shape(features)
-        batchsize = shape[0]
-        num_features = features.shape[3].value
-        features = tf.reshape(features,[batchsize,shape[1]*shape[2],num_features])
-        rnncell_fw = tf.contrib.rnn.BasicLSTMCell(1024) # TODO choose parameter
-        fw_state = rnncell_fw.zero_state(batch_size=batchsize, dtype=tf.float32)
-        rnncell_bw = tf.contrib.rnn.BasicLSTMCell(1024) # TODO choose parameter
-        bw_state = rnncell_bw.zero_state(batch_size=batchsize, dtype=tf.float32)
-        output, state = \
-            tf.nn.bidirectional_dynamic_rnn(rnncell_fw, \
-            rnncell_bw, features, initial_state_fw=fw_state, initial_state_bw=bw_state)
-        state_fw, state_bw = state
-        state_fw_hidden, state_fw = state_fw
-        state_bw_hidden, state_bw = state_bw
-        #code.interact(local=dict(globals(), **locals())) 
-        state_hidden = tf.concat([state_fw_hidden,state_bw_hidden],1)
-        state = tf.concat([state_fw,state_bw],1)
-        return state_hidden, state
-
-    def createBaselineDecoder(self,state):
-        initial_in = tf.random_normal(tf.shape(state[0]))
-        rnncell = tf.contrib.rnn.LSTMCell(2048)
-        outputs = tf.TensorArray(dtype=tf.float32, size=self.max_num_tokens)
-        state = tf.contrib.rnn.LSTMStateTuple(state[0],state[1])
-        params = [tf.constant(0), initial_in, outputs, state]
-        while_condition = lambda i, inp, outputs, state: tf.less(i, self.max_num_tokens)
-        def body(i, inp, outputs, state):
-            output, state = rnncell.__call__(inp, state)
-            # code.interact(local=locals())
-            outputs = outputs.write(i, output)        
-            return [tf.add(i, 1), output, outputs, state]
-        _,_,outputs,_ = tf.while_loop(while_condition, body, params)
-        outputs = outputs.stack()
-        self.weights.update({
-            'wfcbl': tf.Variable(tf.random_normal([2048,self.num_classes]), name='wfcbl'),
-            'bfcbl': tf.Variable(tf.random_normal([self.num_classes]), name='bfcbl')
-        })
-        prediction = tf.tensordot(outputs,self.weights['wfcbl'],[[2],[0]]) 
-        prediction = prediction + self.weights['bfcbl']
-        return tf.nn.softmax(prediction)
-
-
-    def createEncoderLSTM(self, network):
-        batchsize = tf.shape(network)[0]
-        network = tf.transpose(network, [1,0,2,3])
-        # trainable hidden state??? (postional embedding)
-        rnncell_fw = tf.contrib.rnn.LSTMCell(256) # TODO choose parameter
-        fw_state = rnncell_fw.zero_state(batch_size=batchsize, dtype=tf.float32)
-        rnncell_bw = tf.contrib.rnn.LSTMCell(256) # TODO choose parameter
-        bw_state = rnncell_bw.zero_state(batch_size=batchsize, dtype=tf.float32)
-        l = tf.TensorArray(dtype=tf.float32, size=tf.shape(network)[0])
-        params = [tf.constant(0), network, l, fw_state, bw_state]
-        rows = tf.shape(network)[0]
-        while_condition = lambda i, network, l, fw_state, bw_state: tf.less(i, rows)
-        def body(i, network, l, fw_state, bw_state):
-            #i = tf.Print(i,[i],"row: ")
-            outputs, output_states = tf.nn.bidirectional_dynamic_rnn(rnncell_fw, \
-                rnncell_bw, network[i], initial_state_fw=fw_state, \
-                initial_state_bw=bw_state)
-            fw_state, bw_state = output_states
-            # code.interact(local=locals())
-            l = l.write(i, outputs)        
-            return [tf.add(i, 1), network, l, fw_state, bw_state]
-        i, network, l, fw_state, bw_state = tf.while_loop(while_condition, body, \
-            params)
-        network = l.stack()
-        #code.interact(local=dict(globals(), **locals()))
-        #network = tf.Print(network,[tf.shape(network)],"in encoder: ")
-        network = tf.transpose(network, perm=[2,0,3,1,4])
-        s = tf.shape(network)
-        num_features = (network.shape[3] * network.shape[4]).value # other solution???
-        #code.interact(local=dict(globals(), **locals()))
-        # 
-        network = tf.reshape(network, [s[0],s[1],s[2],num_features])
-        #network = tf.Print(network,[tf.shape(network)],"after encoder: ")
-        return network #
-
-    
-
-    def createDecoderLSTM(self, network):
-        shape = tf.Print(tf.shape(network),[tf.shape(network)], \
-            "dynamic network shape from decoder input!!!!!!",1)
-        dim_beta = 50 # hyperparameter!!!
-        dim_h = 512 # hyperparameter!!!
-        batchsize = shape[0] # tf.shape(network)[0] # besserer weg???
-        num_features = network.shape[3].value
-        dim_o = num_features + dim_h
-        # the used rnncell
-        rnncell = tf.contrib.rnn.LSTMCell(256, state_is_tuple=False, reuse=None) #size is hyperparamter!!!
-        # used weight variables
-        beta = tf.Variable(tf.random_normal([dim_beta])) # size is hyperparamter!!!
-        w1 = tf.Variable(tf.random_normal([dim_beta, dim_h])) # dim_beta x dim_h
-        w2 = tf.Variable(tf.random_normal([num_features, dim_beta])) # num_features x dim_beta
-        wc = tf.Variable(tf.random_normal([dim_o])) # (num_features + dim_h) (x hyperparam) ??? (= dim_o) ???
-        wout = tf.Variable(tf.random_normal([self.num_classes, dim_o])) # num_classes x dim_o
-        # initial states, ebenfalls Variablen???
-        h0 = tf.zeros([batchsize,dim_h]) # 
-        y0 = tf.zeros([batchsize,self.num_classes]) #
-        o0 = tf.zeros([batchsize,dim_o]) #
-        # brings network in shape for element wise multiplikation
-        network_ = tf.expand_dims(network,4)
-        # create necessaties for the while-loop
-        l = tf.TensorArray(dtype=tf.float32, size=self.max_num_tokens)
-        params = [tf.constant(0), network, l, h0, y0, o0, beta, network_, w1, w2]
-        tmax = tf.constant(self.max_num_tokens)
-        #tmax = tf.Print(tmax,[tmax],"tmax =============================")
-        def while_condition(t, network, l, h, y, o, beta, network_, w1, w2):
-            #t = tf.Print(t,[t],"twhile =============================")
-            return tf.less(t, tmax) # token embedding??
-        def body(t, network, l, h, y, o, beta, network_, w1, w2):
-            hdotw1 = tf.tensordot(h,w1,[[1],[1]])
-            hdotw1 = tf.expand_dims(hdotw1,1)
-            hdotw1 = tf.expand_dims(hdotw1,1)
-            hdotw1 = tf.expand_dims(hdotw1,1)
-            e = tf.tensordot(beta,tf.tanh(hdotw1 + w2 * network_),[[0],[4]])
-            alpha = tf.nn.softmax(e, dim=1)
-            c = alpha * network
-            c = tf.transpose(c, perm=[1,2,0,3]) # put rows and columns in front in order to sum over them
-            c = tf.foldl(lambda a, x: a + x, c)
-            c = tf.foldl(lambda a, x: a + x, c) # batchsize x num_features
-            oput,h = rnncell.__call__(tf.concat([y,o],1), h)
-            o = tf.tanh(wc * tf.concat([h,c],1)) # batchsize x dim_o
-            y = tf.nn.softmax(tf.tensordot(o,wout,[[1],[1]])) # batch_size x num_classes # zeilenweise normieren!!!
-            l = l.write(t, y)
-            t = tf.add(t, 1)
-            return [t, network, l, h, y, o, beta, network_, w1, w2]
-        t, network, l, h, y, o, beta, network_, w1, \
-            w2 = tf.while_loop(while_condition, body, params)
-        #t = tf.Print(t,[t],"ttttttttttttttttttttttttttttend =============================",5)
-        l = l.stack()
-        l = tf.transpose(l, [1,0,2])
-        #l = tf.Print(l,[tf.shape(l)],"after decoder: ")
-        return l
-
-    def loss(self, pred, labels):
-        pred = tf.transpose(pred, [1,0,2])
-        labels = tf.transpose(labels, [1,0])
-        #code.interact(local=dict(globals(), **locals())) 
-        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels, \
-            logits=pred)
-        return tf.reduce_mean(loss)
-
-    def containedClassesLoss(self, pred, labels):
-        loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels, logits=pred)
-        return tf.reduce_mean(loss)
-
-    def training(self, loss):
+    def useMomentumOptimizer(self):
         optimizer = tf.train.MomentumOptimizer(self.learning_rate,0.9)
-        train_op = optimizer.minimize(loss)
-        return train_op
+        self.train_op = optimizer.minimize(self.loss)
 
     def addLog(self, train_loss, val_loss, train_accuracy, val_accuracy, epoch, \
             batch, train_stats, val_stats):
@@ -433,7 +136,17 @@ class Model:
                 train_accuracy=train_accuracy,val_accuracy=val_accuracy, \
                 train_stats=train_stats,val_stats=val_stats)
 
-    def save(self, sess):
+    def trainStep(self, inp, groundtruth):
+        feed_dict={self.input: inp, self.groundtruth: groundtruth}
+        return self.session.run([self.train_op, self.loss, self.classes_prediction], \
+                        feed_dict=feed_dict)
+
+    def valStep(self, inp, groundtruth):
+        feed_dict={self.input: inp, self.groundtruth: groundtruth}
+        return self.session.run([self.loss, self.classes_prediction], \
+                        feed_dict=feed_dict)
+
+    def save(self):
         shutil.rmtree(self.param_path, ignore_errors=True)
         if not os.path.exists(self.param_path):
             with open(self.param_path, 'w') as fout:
@@ -443,7 +156,7 @@ class Model:
                     train_mode=train_mode, \
                     learning_rate=self.learning_rate, \
                     nr_epochs=self.nr_epochs, model_dir=self.model_dir)
-        self.saver.save(sess, self.save_path)
+        self.saver.save(self.session, self.save_path)
 
     def countVariables(self,sess):
         return np.sum([np.prod(v.get_shape().as_list()) \
@@ -459,6 +172,6 @@ def load(model_path, sess, train_mode):
     nr_epochs = np.asscalar(params['nr_epochs'])
     #code.interact(local=dict(globals(), **locals()))
     model = Model(num_classes, max_num_tokens, model_dir, capacity, learning_rate, \
-        nr_epochs, train_mode=train_mode)
+        nr_epochs, train_mode=train_mode, loaded=True)
     model.saver.restore(sess, model.save_path)
     return model
