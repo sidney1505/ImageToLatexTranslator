@@ -51,15 +51,13 @@ def main(args):
     vocabulary = [a[:-1] for a in vocabulary]
     #
     with tf.Graph().as_default():
-        sess = tf.Session()
         model = models.wysiwyg.load(model_path, sess)
-        feed_dict={model.images_placeholder: imgs}
-        network = sess.run(model.network, feed_dict=feed_dict)
+        prediction = model.predict(imgs)
         print('hi')
         print(len(vocabulary))
         s = ''
-        for i in range(network.shape[1]):
-            idx = np.argmax(network[0][i]) # dimensionen richtig??
+        for i in range(prediction.shape[1]):
+            idx = np.argmax(prediction[0][i]) # dimensionen richtig??
             print(idx)
             if idx >= len(vocabulary): # welchen index hat das end of line symbol?
                 s = s + 'END '

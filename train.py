@@ -105,6 +105,7 @@ def calculateAccuracy(classes_pred, classes_true, stats):
 
 def main(args):
     print("training starts now!")
+    #code.interact(local=dict(globals(), **locals()))
     params = process_args(args)
     params.traintype = int(params.traintype)
     params.capacity = int(params.capacity)
@@ -130,123 +131,123 @@ def main(args):
     num_classes = batch0['num_classes']
     max_num_tokens = len(batch0['labels'][0])
 
-    # creates the tensorflow session were the tensorflow variables can live
-    with tf.Graph().as_default():
-        # load/create the model
-        if params.load_model:
-            model = models.wysiwyg.load(params.model_dir, sess)
-        else:
-            # create the model directory
-            if not os.path.exists(params.model_dir):
-                os.makedirs(params.model_dir)
-            params.model_dir = params.model_dir + '/model-' + \
-                str(datetime.datetime.now())
-            if not os.path.exists(params.model_dir):
-                os.makedirs(params.model_dir)
-            model = Model(num_classes, max_num_tokens, params.model_dir, capacity= \
-                params.capacity, train_mode=params.traintype)     
-        # creates the first validation batch
-        val_batch_it = 0
+    if params.load_model:
+        model = models.wysiwyg.load(params.model_dir, params.traintype)
+    else:
+        # create the model directory
+        if not os.path.exists(params.model_dir):
+            os.makedirs(params.model_dir)
+        params.model_dir = params.model_dir + '/model-' + \
+            str(datetime.datetime.now())
+        if not os.path.exists(params.model_dir):
+            os.makedirs(params.model_dir)
         #code.interact(local=dict(globals(), **locals()))
-        val_batch_images, val_minibatchsize, val_batch_it, val_batch_labels,_, \
-            val_classes_true = loadBatch(params.val_batch_dir, val_batch_names, \
-            val_batch_it, model, model.capacity)
-        # validation minibatch iterator needs to be created
-        val_minibatch_it = 0
-        val_stats = np.zeros(model.num_classes + 1)
-        # the training loop
-        for epoch in range(model.nr_epochs):
-            train_batch_it = 0
-            train_batch_images, train_minibatchsize, train_batch_it, \
-                train_batch_labels, new_train_iteration, train_batch_classes_true = \
-                loadBatch(params.train_batch_dir, train_batch_names, train_batch_it, \
-                model, model.capacity)
-            val_minibatch_loss_old = float("inf")
-            train_stats = np.zeros(model.num_classes + 1)
-            while not new_train_iteration: # randomise!!!
-                print(train_batch_it)
-                train_batch_losses = []
-                train_batch_accuracies = []
-                for train_minibatch_it in range(train_batch_images.shape[0] \
-                        / train_minibatchsize):
-                    # create the minibatches
-                    train_minibatch_images = createMinibatch(train_batch_images, \
-                        train_minibatch_it, train_minibatchsize)
-                    train_minibatch_labels = createMinibatch(train_batch_labels, \
-                        train_minibatch_it, train_minibatchsize)
-                    train_minibatch_classes_true = createMinibatch( \
-                        train_batch_classes_true, \
-                        train_minibatch_it, train_minibatchsize)
-                    #
-                    print(train_minibatch_images.shape)
-                    _, train_minibatch_loss_value, train_minibatch_classes_pred \
-                        = model.trainStep(train_minibatch_images, train_minibatch_labels)
-                    
-                    if model.classes_gold == None:
-                        train_minibatch_accuracy = -1.0
-                    else:
-                        train_minibatch_accuracy, train_stats = calculateAccuracy( \
-                            train_minibatch_classes_pred, train_minibatch_classes_true, \
-                            train_stats)
-
-                    print('minibatch(' + str(epoch) + ',' + str(train_batch_it) \
-                        + ',' + str(train_minibatch_it*train_minibatchsize)+') : '+\
-                        str(train_minibatch_images.shape) + ' : ' + \
-                        str(train_minibatch_labels.shape) + ' : ' + \
-                        str(train_minibatch_loss_value) + ' : ' + \
-                        str(train_minibatch_accuracy))
-                    train_batch_losses.append(train_minibatch_loss_value)
-                    train_batch_accuracies.append(train_minibatch_accuracy)
-                # calculating the validation loss
+        tf.reset_default_graph()
+        model = Model(num_classes, max_num_tokens, params.model_dir, capacity= \
+            params.capacity, train_mode=params.traintype)
+    # ensures capability of loading models
+    model = models.wysiwyg.load(model.model_dir, model.train_mode)
+    # creates the first validation batch
+    val_batch_it = 0
+    #code.interact(local=dict(globals(), **locals()))
+    val_batch_images, val_minibatchsize, val_batch_it, val_batch_labels,_, \
+        val_classes_true = loadBatch(params.val_batch_dir, val_batch_names, \
+        val_batch_it, model, model.capacity)
+    # validation minibatch iterator needs to be created
+    val_minibatch_it = 0
+    val_stats = np.zeros(model.num_classes + 1)
+    # the training loop
+    for epoch in range(model.nr_epochs):
+        train_batch_it = 0
+        train_batch_images, train_minibatchsize, train_batch_it, \
+            train_batch_labels, new_train_iteration, train_batch_classes_true = \
+            loadBatch(params.train_batch_dir, train_batch_names, train_batch_it, \
+            model, model.capacity)
+        val_minibatch_loss_old = float("inf")
+        train_stats = np.zeros(model.num_classes + 1)
+        while not new_train_iteration: # randomise!!!
+            print(train_batch_it)
+            train_batch_losses = []
+            train_batch_accuracies = []
+            for train_minibatch_it in range(train_batch_images.shape[0] \
+                    / train_minibatchsize):
                 # create the minibatches
-                val_minibatch_images = createMinibatch(val_batch_images, \
-                    val_minibatch_it, val_minibatchsize)
-                val_minibatch_labels = createMinibatch(val_batch_labels, \
-                    val_minibatch_it, val_minibatchsize)
-                val_minibatch_classes_true = createMinibatch( \
-                    val_classes_true, val_minibatch_it, val_minibatchsize)
+                train_minibatch_images = createMinibatch(train_batch_images, \
+                    train_minibatch_it, train_minibatchsize)
+                train_minibatch_labels = createMinibatch(train_batch_labels, \
+                    train_minibatch_it, train_minibatchsize)
+                train_minibatch_classes_true = createMinibatch( \
+                    train_batch_classes_true, \
+                    train_minibatch_it, train_minibatchsize)
                 #
-                val_minibatch_loss_value, val_minibatch_classes_pred \
-                    = model.valStep(val_minibatch_images, val_minibatch_labels)
+                print(train_minibatch_images.shape)
+                train_minibatch_loss_value, train_minibatch_classes_pred \
+                    = model.trainStep(train_minibatch_images, train_minibatch_labels)
                 
                 if model.classes_gold == None:
-                    val_minibatch_accuracy = -1.0
+                    train_minibatch_accuracy = -1.0
                 else:
-                    val_minibatch_accuracy, val_stats = calculateAccuracy( \
-                        val_minibatch_classes_pred, val_minibatch_classes_true, val_stats)
-                print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-                print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')            
-                print('minibatch(' + str(epoch) + ',' + str(val_batch_it) \
-                    + ',' + str(val_minibatch_it * val_minibatchsize) + ') : ' + \
-                    str(val_minibatch_images.shape) + ' : ' + \
-                    str(val_minibatch_labels.shape) + ' : ' + \
-                    str(val_minibatch_loss_value) + ' : ' + \
-                    str(val_minibatch_accuracy))
-                print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-                print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-                # adds a log
-                model.addLog(np.mean(train_batch_losses), val_minibatch_loss_value, \
-                    np.mean(train_batch_accuracies), val_minibatch_accuracy, epoch, \
-                    train_batch_it, train_stats, val_stats)
-                val_minibatch_it = val_minibatch_it + 1
-                if (val_minibatch_it + 1) * val_minibatchsize > len(val_batch_images):
-                    val_batch_images, val_minibatchsize, val_batch_it, \
-                        val_batch_labels,_,val_classes_true = \
-                        loadBatch(params.val_batch_dir, \
-                        val_batch_names, val_batch_it, model,\
-                        model.capacity)
-                    val_minibatch_it = 0                
-                train_batch_images, train_minibatchsize, train_batch_it, \
-                train_batch_labels, new_train_iteration, train_batch_classes_true = \
-                    loadBatch(params.train_batch_dir, train_batch_names, \
-                    train_batch_it, model, model.capacity)
-                if val_minibatch_loss_old < val_minibatch_loss_value:
-                    print('decrease learning rate!')
-                    model.learning_rate = model.learning_rate * 0.5
-                else:
-                    model.save()
-                val_minibatch_loss_old = val_minibatch_loss_value
-        sess.close()
+                    train_minibatch_accuracy, train_stats = calculateAccuracy( \
+                        train_minibatch_classes_pred, train_minibatch_classes_true, \
+                        train_stats)
+
+                print('minibatch(' + str(epoch) + ',' + str(train_batch_it) \
+                    + ',' + str(train_minibatch_it*train_minibatchsize)+') : '+\
+                    str(train_minibatch_images.shape) + ' : ' + \
+                    str(train_minibatch_labels.shape) + ' : ' + \
+                    str(train_minibatch_loss_value) + ' : ' + \
+                    str(train_minibatch_accuracy))
+                train_batch_losses.append(train_minibatch_loss_value)
+                train_batch_accuracies.append(train_minibatch_accuracy)
+            # calculating the validation loss
+            # create the minibatches
+            val_minibatch_images = createMinibatch(val_batch_images, \
+                val_minibatch_it, val_minibatchsize)
+            val_minibatch_labels = createMinibatch(val_batch_labels, \
+                val_minibatch_it, val_minibatchsize)
+            val_minibatch_classes_true = createMinibatch( \
+                val_classes_true, val_minibatch_it, val_minibatchsize)
+            #
+            val_minibatch_loss_value, val_minibatch_classes_pred \
+                = model.valStep(val_minibatch_images, val_minibatch_labels)
+            
+            if model.classes_gold == None:
+                val_minibatch_accuracy = -1.0
+            else:
+                val_minibatch_accuracy, val_stats = calculateAccuracy( \
+                    val_minibatch_classes_pred, val_minibatch_classes_true, val_stats)
+            print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+            print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')            
+            print('minibatch(' + str(epoch) + ',' + str(val_batch_it) \
+                + ',' + str(val_minibatch_it * val_minibatchsize) + ') : ' + \
+                str(val_minibatch_images.shape) + ' : ' + \
+                str(val_minibatch_labels.shape) + ' : ' + \
+                str(val_minibatch_loss_value) + ' : ' + \
+                str(val_minibatch_accuracy))
+            print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+            print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+            # adds a log
+            model.addLog(np.mean(train_batch_losses), val_minibatch_loss_value, \
+                np.mean(train_batch_accuracies), val_minibatch_accuracy, epoch, \
+                train_batch_it, train_stats, val_stats)
+            val_minibatch_it = val_minibatch_it + 1
+            if (val_minibatch_it + 1) * val_minibatchsize > len(val_batch_images):
+                val_batch_images, val_minibatchsize, val_batch_it, \
+                    val_batch_labels,_,val_classes_true = \
+                    loadBatch(params.val_batch_dir, \
+                    val_batch_names, val_batch_it, model,\
+                    model.capacity)
+                val_minibatch_it = 0                
+            train_batch_images, train_minibatchsize, train_batch_it, \
+            train_batch_labels, new_train_iteration, train_batch_classes_true = \
+                loadBatch(params.train_batch_dir, train_batch_names, \
+                train_batch_it, model, model.capacity)
+            if val_minibatch_loss_old < val_minibatch_loss_value:
+                print('decrease learning rate!')
+                model.learning_rate = model.learning_rate * 0.5
+            val_minibatch_loss_old = val_minibatch_loss_value
+        model.save()
+    model.session.close()
 
 if __name__ == '__main__':
     main(sys.argv[1:])
