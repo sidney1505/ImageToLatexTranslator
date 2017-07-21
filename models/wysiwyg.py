@@ -1,10 +1,11 @@
 import code, os, shutil, tflearn
 import tensorflow as tf
 import numpy as np
+import tensorflow.contrib.slim as slim
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.conv import conv_2d, max_pool_2d
 import WYSIWYGCNN, BaselineEncoder, BaselineDecoder, SimpleAttentionModule, FullyConnected
-import WYSIWYGEncoder, WYSIWYGDecoder
+import WYSIWYGEncoder, WYSIWYGDecoder, VGGNet, FullyConnectedVGG
 
 class Model:
     def __init__(self,  num_classes, max_num_tokens, model_dir, \
@@ -112,6 +113,18 @@ class Model:
                 self.input)
             self.label_prediction = BaselineDecoder.createBaselineDecoder(self, self.encoded)
             self.useLabelLoss()
+        elif train_mode == 6:
+            print('build model type 6!')
+            # seperate encoding of the images to a feature map
+            self.input = tf.placeholder(dtype=tf.float32, \
+                shape=[None, None, None, 1])
+            self.classes_gold = tf.placeholder(dtype=tf.float32, \
+                shape=[None,num_classes])
+            self.features = VGGNet.createCNNModel(self, self.input, loaded)
+            code.interact(local=dict(globals(), **locals()))
+            self.classes_prediction = FullyConnectedVGG.createFullyConnected(self, \
+                self.features, loaded)
+            self.useClassesLoss()
         assert self.input != None
         assert self.loss != None
         self.useGradientDescentOptimizer()
@@ -121,6 +134,8 @@ class Model:
             self.session.run(init)
             self.save()
         tf.summary.histogram('predictionHisto', self.prediction)
+        tf.summary.scalar('predictionAvg', tf.reduce_mean(self.prediction))
+        tf.summary.scalar('predictionTensor', self.prediction)
         self.summaries = tf.summary.merge_all()
         self.board_path = self.model_dir + '/tensorboard'
         self.writer = tf.summary.FileWriter(self.board_path, graph=tf.get_default_graph())
@@ -156,7 +171,9 @@ class Model:
     def useGradientDescentOptimizer(self):
         with tf.variable_scope("MySGDOptimizer", reuse=None):
             optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
-            self.train_op = optimizer.minimize(self.loss)
+            #self.train_op = optimizer.minimize(self.loss)
+            self.train_op = slim.learning.create_train_op(self.loss, optimizer, \
+                summarize_gradients=True)
 
     # indicates to use the momentum optimizer
     def useMomentumOptimizer(self):
@@ -195,18 +212,18 @@ class Model:
         return lossValue, classesValue
 
     def writeInLogfile(self, predValue, groundtruth):
-        if self.used_loss == 'label':
+        '''if self.used_loss == 'label':
             for batch in range(predValue.shape[0]):
                 predictionPath = self.logfile_path + '/prediction' + str(self.predictionsDone)
                 fout = open(predictionPath, 'w')
                 for token in range(predValue.shape[1]):
                     line = '(' + str(np.argmax(predValue[batch][token])) + ',' \
                         + str(np.max(predValue[batch][token])) + ',' \
-                        + str(groundtruth[batch][token]) + ',' \
+                        + str(groundtruth[batch][token]) + ',' #\
                         + str(predValue[batch][token][groundtruth[batch][token]]) + ')'                    
                     fout.write(line)
                 fout.close()
-                self.predictionsDone = self.predictionsDone + 1
+                self.predictionsDone = self.predictionsDone + 1'''
 
     def predict(self, inp):
         feed_dict={self.input: inp}
