@@ -5,14 +5,15 @@ import tensorflow.contrib.slim as slim
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.conv import conv_2d, max_pool_2d
 import WYSIWYGCNN, BaselineEncoder, BaselineDecoder, SimpleAttentionModule, FullyConnected
-import WYSIWYGEncoder, WYSIWYGDecoder, VGGNet, FullyConnectedVGG
+import WYSIWYGEncoder, WYSIWYGDecoder, VGGNet, FullyConnectedVGG, LibraryDecoder
 
 class Model:
-    def __init__(self,  num_classes, max_num_tokens, model_dir, \
-            capacity=30000, learning_rate=0.001, nr_epochs=50, train_mode=1, loaded=False, \
+    def __init__(self,  num_classes, max_num_tokens, model_dir, vocabulary, \
+            capacity=30000, learning_rate=0.1, nr_epochs=50, train_mode=1, loaded=False, \
             session=None):
         # intialise class variables
         self.num_classes = num_classes
+        self.vocabulary = np.array(vocabulary)
         self.max_num_tokens = max_num_tokens
         self.capacity = capacity
         self.learning_rate = learning_rate
@@ -33,7 +34,7 @@ class Model:
                 np.savez(fout, num_classes=num_classes, \
                     max_num_tokens=max_num_tokens, \
                     capacity=capacity, learning_rate=learning_rate, \
-                    nr_epochs=nr_epochs, \
+                    nr_epochs=nr_epochs, vocabulary=self.vocabulary,\
                     model_dir=model_dir)
         if session == None:
             self.session = tf.Session()
@@ -109,9 +110,11 @@ class Model:
                 [None, None, None, 512])
             self.label_gold = tf.placeholder(dtype=tf.int32, \
                 shape=[None,max_num_tokens])            
-            self.encoded = BaselineEncoder.createBaselineEncoder(self, \
+            outputs, self.encoded = BaselineEncoder.createBaselineEncoder(self, \
                 self.input)
             self.label_prediction = BaselineDecoder.createBaselineDecoder(self, self.encoded)
+            #print('in init 5')
+            #code.interact(local=dict(globals(), **locals()))
             self.useLabelLoss()
         elif train_mode == 6:
             print('build model type 6!')
@@ -121,13 +124,24 @@ class Model:
             self.classes_gold = tf.placeholder(dtype=tf.float32, \
                 shape=[None,num_classes])
             self.features = VGGNet.createCNNModel(self, self.input, loaded)
-            code.interact(local=dict(globals(), **locals()))
             self.classes_prediction = FullyConnectedVGG.createFullyConnected(self, \
                 self.features, loaded)
             self.useClassesLoss()
+        elif train_mode == 7:
+            print('build model type 7!')
+            # the basic attention module
+            self.input = tf.placeholder(dtype=tf.float32, shape= \
+                [None, None, None, 512])
+            self.label_gold = tf.placeholder(dtype=tf.int32, \
+                shape=[None,max_num_tokens])            
+            outputs, state = BaselineEncoder.createBaselineEncoder(self, \
+                self.input)
+            self.label_prediction = LibraryDecoder.createAttentionModule(self, outputs, \
+                state)
+            self.useLabelLoss()
         assert self.input != None
         assert self.loss != None
-        self.useGradientDescentOptimizer()
+        self.useAdadeltaOptimizer()
         # initialises all variables
         if not loaded:
             init = tf.global_variables_initializer()
@@ -135,7 +149,7 @@ class Model:
             self.save()
         tf.summary.histogram('predictionHisto', self.prediction)
         tf.summary.scalar('predictionAvg', tf.reduce_mean(self.prediction))
-        tf.summary.scalar('predictionTensor', self.prediction)
+        tf.summary.tensor_summary('predictionTensor', self.prediction)
         self.summaries = tf.summary.merge_all()
         self.board_path = self.model_dir + '/tensorboard'
         self.writer = tf.summary.FileWriter(self.board_path, graph=tf.get_default_graph())
@@ -152,8 +166,7 @@ class Model:
             loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label_gold, \
                 logits=label_prediction)
             self.loss = tf.reduce_mean(loss)
-            self.label_gold = tf.nn.softmax(self.label_prediction)
-            self.prediction = self.label_prediction
+            self.prediction = tf.nn.softmax(self.label_prediction)
             self.used_loss = 'label'
 
     # indicates to fit the predicted classes to the gold classes as objective
@@ -179,8 +192,25 @@ class Model:
     def useMomentumOptimizer(self):
         with tf.variable_scope("MyMomentumOptimizer", reuse=None):
             optimizer = tf.train.MomentumOptimizer(self.learning_rate,0.9)
-            code.interact(local=dict(globals(), **locals()))
-            self.train_op = optimizer.minimize(self.loss)
+            #code.interact(local=dict(globals(), **locals()))
+            self.train_op = slim.learning.create_train_op(self.loss, optimizer, \
+                summarize_gradients=True)
+
+    # indicates to use the momentum optimizer
+    def useAdamOptimizer(self):
+        with tf.variable_scope("MyAdamOptimizer", reuse=None):
+            optimizer = tf.train.AdamOptimizer()
+            #code.interact(local=dict(globals(), **locals()))
+            self.train_op = slim.learning.create_train_op(self.loss, optimizer, \
+                summarize_gradients=True)
+
+    # indicates to use the momentum optimizer
+    def useAdadeltaOptimizer(self):
+        with tf.variable_scope("MyAdadeltaOptimizer", reuse=None):
+            optimizer = tf.train.AdadeltaOptimizer(self.learning_rate)
+            #code.interact(local=dict(globals(), **locals()))
+            self.train_op = slim.learning.create_train_op(self.loss, optimizer, \
+                summarize_gradients=True)
 
     def addLog(self, train_loss, val_loss, train_accuracy, val_accuracy, epoch, \
             batch, train_stats, val_stats):
@@ -193,10 +223,11 @@ class Model:
     def trainStep(self, inp, groundtruth):
         if self.step % 10 == 0:
             feed_dict={self.input: inp, self.groundtruth: groundtruth}
-            _,lossValue, classPrediction,summs = self.session.run([self.train_op, self.loss, \
-                self.classes_prediction, self.summaries], feed_dict=feed_dict)
+            _,lossValue, classPrediction,summs,pred = self.session.run([self.train_op, self.loss, \
+                self.classes_prediction, self.summaries, self.prediction], feed_dict=feed_dict)
             #code.interact(local=dict(globals(), **locals()))
             self.writer.add_summary(summs, global_step=self.step)
+            self.writeInLogfile(pred, groundtruth)
         else:
             feed_dict={self.input: inp, self.groundtruth: groundtruth}
             _,lossValue, classPrediction = self.session.run([self.train_op, self.loss, \
@@ -212,18 +243,19 @@ class Model:
         return lossValue, classesValue
 
     def writeInLogfile(self, predValue, groundtruth):
-        '''if self.used_loss == 'label':
+        if self.used_loss == 'label':
+            #code.interact(local=dict(globals(), **locals()))
             for batch in range(predValue.shape[0]):
                 predictionPath = self.logfile_path + '/prediction' + str(self.predictionsDone)
                 fout = open(predictionPath, 'w')
                 for token in range(predValue.shape[1]):
-                    line = '(' + str(np.argmax(predValue[batch][token])) + ',' \
-                        + str(np.max(predValue[batch][token])) + ',' \
-                        + str(groundtruth[batch][token]) + ',' #\
-                        + str(predValue[batch][token][groundtruth[batch][token]]) + ')'                    
+                    line='\"'+self.vocabulary[np.argmax(predValue[batch][token])]+'\" : '\
+                        + str(np.max(predValue[batch][token])) + ' -> \"' \
+                        + self.vocabulary[groundtruth[batch][token]] + '\" : ' \
+                        + str(predValue[batch][token][groundtruth[batch][token]]) + '\n'                    
                     fout.write(line)
                 fout.close()
-                self.predictionsDone = self.predictionsDone + 1'''
+                self.predictionsDone = self.predictionsDone + 1
 
     def predict(self, inp):
         feed_dict={self.input: inp}
@@ -231,15 +263,21 @@ class Model:
 
     def save(self):
         shutil.rmtree(self.param_path, ignore_errors=True)
-        if not os.path.exists(self.param_path):
-            with open(self.param_path, 'w') as fout:
-                np.savez(fout, num_classes=self.num_classes, \
-                    max_num_tokens=self.max_num_tokens, \
-                    capacity=self.capacity, \
-                    train_mode=train_mode, \
-                    learning_rate=self.learning_rate, \
-                    nr_epochs=self.nr_epochs, model_dir=self.model_dir)
+        #if not os.path.exists(self.param_path):
+        with open(self.param_path, 'w') as fout:
+            #print('in der save methode')
+            #code.interact(local=dict(globals(), **locals()))
+            np.savez(fout, num_classes=self.num_classes, \
+                max_num_tokens=self.max_num_tokens, \
+                capacity=self.capacity, \
+                train_mode=self.train_mode, \
+                learning_rate=self.learning_rate, \
+                nr_epochs=self.nr_epochs, 
+                vocabulary=self.vocabulary,
+                model_dir=self.model_dir)
         saver = tf.train.Saver()
+        #print('in der save methode 2')
+        #code.interact(local=dict(globals(), **locals()))
         saver.save(self.session, self.save_path)
         print('variables saved!')
         self.printGlobalVariables()
@@ -259,8 +297,10 @@ class Model:
 
 def load(model_path, train_mode):
     params = np.load(model_path + '/params.npz')
+    #code.interact(local=dict(globals(), **locals()))
     num_classes = np.asscalar(params['num_classes'])
     max_num_tokens = np.asscalar(params['max_num_tokens'])
+    vocabulary = np.asarray(params['vocabulary'])
     model_dir = np.asscalar(params['model_dir'])
     capacity = np.asscalar(params['capacity'])
     learning_rate = np.asscalar(params['learning_rate'])
@@ -271,8 +311,8 @@ def load(model_path, train_mode):
     session = tf.Session()
     #new_saver = tf.train.import_meta_graph(model_dir + '/weights.ckpt.meta')
     #new_saver.restore(session, tf.train.latest_checkpoint(model_dir))
-    model = Model(num_classes, max_num_tokens, model_dir, capacity, learning_rate, \
-        nr_epochs, train_mode=train_mode, loaded=True, session=session)    
+    model = Model(num_classes, max_num_tokens, model_dir, vocabulary, capacity, \
+        learning_rate, nr_epochs, train_mode=train_mode, loaded=True, session=session)    
     saver = tf.train.Saver()
     print('load variables!')
     model.printGlobalVariables()

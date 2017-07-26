@@ -9,12 +9,14 @@ def createBaselineDecoder(model,state):
         #
         initial_in = tf.random_normal(tf.shape(state[0]))
         rnncell = tf.contrib.rnn.LSTMCell(2048)
+        model.norm = tf.contrib.layers.batch_norm
         outputs = tf.TensorArray(dtype=tf.float32, size=model.max_num_tokens)
         state = tf.contrib.rnn.LSTMStateTuple(state[0],state[1])
         params = [tf.constant(0), initial_in, outputs, state]
         while_condition = lambda i, inp, outputs, state: tf.less(i, model.max_num_tokens)
         def body(i, inp, outputs, state):
             output, state = rnncell.__call__(inp, state)
+            output = model.norm(output, updates_collections=None)
             # code.interact(local=locals())
             outputs = outputs.write(i, output)
             return [tf.add(i, 1), output, outputs, state]
@@ -22,4 +24,5 @@ def createBaselineDecoder(model,state):
         outputs = outputs.stack()
         prediction = tf.tensordot(outputs,model.weights['wfcbl'],[[2],[0]]) 
         prediction = prediction + model.weights['bfcbl']
+        prediction = tf.transpose(prediction, [1,0,2])
         return tf.nn.softmax(prediction)

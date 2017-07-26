@@ -45,6 +45,12 @@ def process_args(args):
                             that can be propagated through \
                             the network at a time. \
                             Influences the batch size!'))
+    parser.add_argument('--vocab-path', dest='vocab_path',
+                        type=str, required=True,
+                        help=('The total amount of floats \
+                            that can be propagated through \
+                            the network at a time. \
+                            Influences the batch size!'))
     parameters = parser.parse_args(args)
     return parameters
 
@@ -117,6 +123,14 @@ def main(args):
         "Validation batch directory doesn't exists!"
     assert os.path.exists(params.model_dir) or not params.load_model, \
         "Model directory doesn't exists!"
+    assert os.path.exists(params.vocab_path) or not params.vocab_path, \
+        "Vocabulary file doesn't exists!"
+
+    # reads the vocabulary from file
+    vocabulary = open(params.vocab_path).readlines()
+    vocabulary[-1] = vocabulary[-1] + '\n'
+    vocabulary = [a[:-1] for a in vocabulary]
+    vocabulary.append('END')
 
     # load the names of the training & validation batchfiles
     train_batch_names = os.listdir(params.train_batch_dir)
@@ -143,9 +157,11 @@ def main(args):
             os.makedirs(params.model_dir)
         #code.interact(local=dict(globals(), **locals()))
         tf.reset_default_graph()
-        model = Model(num_classes, max_num_tokens, params.model_dir, capacity= \
+        model = Model(num_classes, max_num_tokens, params.model_dir, vocabulary, capacity= \
             params.capacity, train_mode=params.traintype)
     # ensures capability of loading models
+    print('model stored at:')
+    print(model.model_dir)
     model = models.wysiwyg.load(model.model_dir, model.train_mode)
     # creates the first validation batch
     val_batch_it = 0
@@ -242,9 +258,9 @@ def main(args):
             train_batch_labels, new_train_iteration, train_batch_classes_true = \
                 loadBatch(params.train_batch_dir, train_batch_names, \
                 train_batch_it, model, model.capacity)
-            if val_minibatch_loss_old < val_minibatch_loss_value:
-                print('decrease learning rate!')
-                model.learning_rate = model.learning_rate * 0.5
+            #if val_minibatch_loss_old < val_minibatch_loss_value:
+            #    print('decrease learning rate!')
+            #    model.decreaseLearningRate()
             val_minibatch_loss_old = val_minibatch_loss_value
         model.save()
     model.session.close()

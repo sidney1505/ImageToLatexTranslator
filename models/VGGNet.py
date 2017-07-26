@@ -20,6 +20,7 @@ def createCNNModel(model, inputpx, loaded):
             features = tf.nn.relu(features)
 
         features = tflearn.layers.conv.max_pool_2d(features, [2,2], strides=[2,2])
+        features = tf.contrib.layers.batch_norm(features)
 
         with tf.variable_scope("layer3", reuse=None):
             w2 = tf.get_variable('weight',[3,3,64,128], tf.float32, tf.random_normal_initializer())
@@ -36,6 +37,7 @@ def createCNNModel(model, inputpx, loaded):
             features = tf.nn.relu(features)
 
         features = tflearn.layers.conv.max_pool_2d(features, [2,1], strides=[2,1])
+        features = tf.contrib.layers.batch_norm(features)
 
         with tf.variable_scope("layer5", reuse=None):
             w3 = tf.get_variable('weight',[3,3,128,256], tf.float32, tf.random_normal_initializer())
@@ -66,7 +68,7 @@ def createCNNModel(model, inputpx, loaded):
             features = tf.nn.relu(features)
 
         features = tflearn.layers.conv.max_pool_2d(features, [1,2], strides=[1,2])            
-        # features = tf.contrib.layers.batch_norm(features)
+        features = tf.contrib.layers.batch_norm(features)
 
         with tf.variable_scope("layer9", reuse=None):
             w5 = tf.get_variable('weight',[3,3,256,512], tf.float32, tf.random_normal_initializer())
@@ -97,6 +99,7 @@ def createCNNModel(model, inputpx, loaded):
             features = tf.nn.relu(features)
         
         features = tflearn.layers.conv.max_pool_2d(features, [2,1], strides=[2,1])
+        features = tf.contrib.layers.batch_norm(features)
 
         with tf.variable_scope("layer13", reuse=None):
             w6 = tf.get_variable('weight',[3,3,512,512], tf.float32, tf.random_normal_initializer())
@@ -127,5 +130,7 @@ def createCNNModel(model, inputpx, loaded):
             features = tf.nn.relu(features)
 
         features = tflearn.layers.conv.max_pool_2d(features, [1,2], strides=[1,2])
+        features = tf.contrib.layers.batch_norm(features)
+
 
         return features
