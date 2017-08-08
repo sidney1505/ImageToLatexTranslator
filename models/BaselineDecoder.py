@@ -15,6 +15,7 @@ def createBaselineDecoder(model,state):
         params = [tf.constant(0), initial_in, outputs, state]
         while_condition = lambda i, inp, outputs, state: tf.less(i, model.max_num_tokens)
         def body(i, inp, outputs, state):
+            #inp = tf.contrib.layers.batch_norm(inp, updates_collections=None)
             output, state = rnncell.__call__(inp, state)
             output = model.norm(output, updates_collections=None)
             # code.interact(local=locals())
@@ -25,4 +26,5 @@ def createBaselineDecoder(model,state):
         prediction = tf.tensordot(outputs,model.weights['wfcbl'],[[2],[0]]) 
         prediction = prediction + model.weights['bfcbl']
         prediction = tf.transpose(prediction, [1,0,2])
+        #prediction = tf.contrib.layers.batch_norm(prediction)
         return tf.nn.softmax(prediction)

@@ -25,5 +25,6 @@ def createBaselineEncoder(model,features):
         state_bw_hidden, state_bw = state_bw
         state_hidden = tf.concat([state_fw_hidden,state_bw_hidden],1)
         state = tf.concat([state_fw,state_bw],1)
+        #state = tf.contrib.layers.batch_norm(state)
         output = tf.concat([output[0],output[1]],2)
     return output, (state_hidden, state)
