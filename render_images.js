@@ -46,7 +46,7 @@ lineReader.eachLine(process.env.FORMULAS, function(line, last) {
       console.log('::::::::');
     }
     if (!data.errors) {
-      fs.writeFile(process.env.SVG_IMAGES + '/img' + i.toString(),data.svg, function(err) {
+      fs.writeFile(process.env.SVG_IMAGES+'/img'+i.toString()+'.svg',data.svg,function(err) {
         if(err) {
             return console.log(err);
         } else if(i % 100 == 0) {

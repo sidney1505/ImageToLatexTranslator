@@ -4,8 +4,9 @@ import numpy as np
 import tensorflow.contrib.slim as slim
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.conv import conv_2d, max_pool_2d
-import WYSIWYGCNN, BaselineEncoder, BaselineDecoder, SimpleAttentionModule, FullyConnected
-import WYSIWYGEncoder, WYSIWYGDecoder, VGGNet, FullyConnectedVGG, LibraryDecoder
+import WYSIWYGFeatureExtractor, BaselineEncoder, BaselineDecoder, SimpleAttentionModule 
+import WYSIWYGEncoder, WYSIWYGDecoder, VGGNet, FullyConnectedClassifierVGG, LibraryDecoder
+import DenseNetFeatureExtractor, FullyConnectedClassifier
 
 class Model:
     def __init__(self,  num_classes, max_num_tokens, model_dir, vocabulary, \
@@ -43,7 +44,38 @@ class Model:
         self.weights = {}
         self.classes_prediction = tf.constant(-1)
         self.classes_gold = None
-        if train_mode == 0:
+        elif train_mode == 'wysgiwyg_fe':
+            print('build wysiwyg feature extractor!')
+            # seperate encoding of the images to a feature map
+            self.input = tf.placeholder(dtype=tf.float32, \
+                shape=[None, None, None, 1])
+            self.classes_gold = tf.placeholder(dtype=tf.float32, \
+                shape=[None,num_classes])
+            self.features = WYSIWYGFeatureExtractor.createCNNModel(self, self.input, loaded)           
+            self.classes_prediction = FullyConnectedClassifier.createFullyConnectedClassifier(self, \
+                self.features, loaded)
+            self.useClassesLoss()
+        elif train_mode == 'bahdanau_encdec':
+            print('build encoder decoder stack with bahdanau attention!')
+            # the basic attention module
+            self.input = tf.placeholder(dtype=tf.float32, shape= [None, None, None, 512])
+            self.label_gold = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])            
+            outputs, state = BaselineEncoder.createBaselineEncoder(self, self.input)
+            self.label_prediction = LibraryDecoder.createAttentionModule(self, outputs, \
+                state)
+            self.useLabelLoss()
+        elif train_mode == 'vgg_fe':
+            print('build vgg feature extractor!')
+            # seperate encoding of the images to a feature map
+            self.input = tf.placeholder(dtype=tf.float32, \
+                shape=[None, None, None, 1])
+            self.classes_gold = tf.placeholder(dtype=tf.float32, \
+                shape=[None,num_classes])
+            self.features = VGGNet.createCNNModel(self, self.input, loaded)
+            self.classes_prediction = FullyConnectedClassifierVGG.createFullyConnectedClassifier(self, \
+                self.features, loaded)
+            self.useClassesLoss()
+        '''if train_mode == 'wysgiwyg_e2e':
             print('build model type 0!')
             # end-to-end training like the original wysiwyg
             # whole pipeline encoding -> refinement -> decoding
@@ -54,24 +86,13 @@ class Model:
                 shape=[None,max_num_tokens])
             self.classes_gold = tf.placeholder(dtype=tf.int32, \
                 shape=[None,num_classes])
-            self.features = WYSIWYGCNN.createCNNModel(self, self.input, loaded)
+            self.features = WYSIWYGFeatureExtractor.createCNNModel(self, self.input, loaded)
             self.featuresRefined = WYSIWYGEncoder.createEncoderLSTM(self, self.features)
             self.label_prediction = WYSIWYGDecoder.createDecoderLSTM(self, \
                 self.featuresRefined)            
-            self.classes_prediction = tf.sigmoid(FullyConnected.createFullyConnected(self, \
+            self.classes_prediction = tf.sigmoid(FullyConnectedClassifier.createFullyConnectedClassifier(self, \
                 self.features, loaded))
             self.useLabelLoss()
-        elif train_mode == 1:
-            print('build model type 1!')
-            # seperate encoding of the images to a feature map
-            self.input = tf.placeholder(dtype=tf.float32, \
-                shape=[None, None, None, 1])
-            self.classes_gold = tf.placeholder(dtype=tf.float32, \
-                shape=[None,num_classes])
-            self.features = WYSIWYGCNN.createCNNModel(self, self.input, loaded)           
-            self.classes_prediction = FullyConnected.createFullyConnected(self, \
-                self.features, loaded)
-            self.useClassesLoss()
         elif train_mode == 2:
             print('build model type 2!')
             # seperate refinement of the feature map
@@ -80,7 +101,7 @@ class Model:
             self.classes_gold = tf.placeholder(dtype=tf.float32, \
                 shape=[None,num_classes])
             self.featuresRefined = WYSIWYGEncoder.createEncoderLSTM(self, self.input)
-            self.classes_prediction = FullyConnected.createFullyConnected(self, \
+            self.classes_prediction = FullyConnectedClassifier.createFullyConnectedClassifier(self, \
                 self.featuresRefined, loaded)
             self.useClassesLoss()
         elif train_mode == 3:
@@ -114,27 +135,7 @@ class Model:
             self.label_prediction = BaselineDecoder.createBaselineDecoder(self, self.encoded)
             #print('in init 5')
             #code.interact(local=dict(globals(), **locals()))
-            self.useLabelLoss()
-        elif train_mode == 6:
-            print('build model type 6!')
-            # seperate encoding of the images to a feature map
-            self.input = tf.placeholder(dtype=tf.float32, \
-                shape=[None, None, None, 1])
-            self.classes_gold = tf.placeholder(dtype=tf.float32, \
-                shape=[None,num_classes])
-            self.features = VGGNet.createCNNModel(self, self.input, loaded)
-            self.classes_prediction = FullyConnectedVGG.createFullyConnected(self, \
-                self.features, loaded)
-            self.useClassesLoss()
-        elif train_mode == 7:
-            print('build model type 7!')
-            # the basic attention module
-            self.input = tf.placeholder(dtype=tf.float32, shape= [None, None, None, 512])
-            self.label_gold = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])            
-            outputs, state = BaselineEncoder.createBaselineEncoder(self, self.input)
-            self.label_prediction = LibraryDecoder.createAttentionModule(self, outputs, \
-                state)
-            self.useLabelLoss()
+            self.useLabelLoss()'''
         assert self.input != None
         assert self.loss != None
         self.useAdadeltaOptimizer()
@@ -238,8 +239,8 @@ class Model:
             self.train_op = slim.learning.create_train_op(self.loss, optimizer, \
                 summarize_gradients=True)
 
-    def addLog(self, train_loss, val_loss, train_accuracy, val_accuracy, epoch, batch):
-        with open(self.logs+'/log_'+str(epoch)+'_'+str(batch)+'.npz', 'w') \
+    def addLog(self, train_loss, val_loss, train_accuracy, val_accuracy, epoch):
+        with open(self.logs+'/log_'+str(epoch)+'.npz', 'w') \
                 as fout:
             np.savez(fout,train_loss=train_loss,val_loss=val_loss, \
                 train_accuracy=train_accuracy,val_accuracy=val_accuracy)
