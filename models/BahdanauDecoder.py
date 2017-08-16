@@ -1,11 +1,8 @@
 import code
-import os
-import shutil
 import tensorflow as tf
-import tflearn
 
 # https://www.tensorflow.org/api_docs/python/tf/contrib/legacy_seq2seq/embedding_attention_seq2seq
-def createAttentionModule(model, features, state):
+def createGraph(model, features, state):
     state = tf.contrib.rnn.LSTMStateTuple(state[0],state[1])
     with tf.variable_scope("attentionModule", reuse=None):
         rnncell = tf.contrib.rnn.BasicLSTMCell(2048)

@@ -4,14 +4,16 @@ import numpy as np
 import tensorflow.contrib.slim as slim
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.conv import conv_2d, max_pool_2d
-import WYSIWYGFeatureExtractor, BaselineEncoder, BaselineDecoder, SimpleAttentionModule 
-import WYSIWYGEncoder, WYSIWYGDecoder, VGGNet, FullyConnectedClassifierVGG, LibraryDecoder
-import DenseNetFeatureExtractor, FullyConnectedClassifier
+import WYSIWYGFeatureExtractor, BidirectionalRowEncoder, BahdanauDecoder, WYSIWYGClassifier
+import VGGFeatureExtractor, VGGClassifier
+import AlexnetFeatureExtractor, AlexnetClassifier
+import ResnetFeatureExtractor, ResnetClassifier
+import DensenetFeatureExtractor, DensenetClassifier
 
 class Model:
     def __init__(self,  num_classes, max_num_tokens, model_dir, vocabulary, \
-            capacity=30000, learning_rate=0.1, nr_epochs=50, train_mode=1, loaded=False, \
-            session=None):
+            capacity=30000, learning_rate=0.1, nr_epochs=50, train_mode='wysgiwygFe', \
+            loaded=False, session=None, current_epoch=0):
         # intialise class variables
         self.num_classes = num_classes
         self.vocabulary = np.array(vocabulary)
@@ -20,6 +22,7 @@ class Model:
         self.learning_rate = learning_rate
         self.nr_epochs = nr_epochs
         self.train_mode = train_mode
+        self.current_epoch = current_epoch
         # save the model
         self.model_dir = model_dir
         self.logs = self.model_dir + '/logs'
@@ -35,107 +38,90 @@ class Model:
                 np.savez(fout, num_classes=num_classes, \
                     capacity=capacity, learning_rate=learning_rate, \
                     nr_epochs=nr_epochs, vocabulary=self.vocabulary,\
-                    model_dir=model_dir)
+                    model_dir=model_dir, current_epoch=current_epoch)
         if session == None:
             self.session = tf.Session()
         else:
             self.session = session
-        # create the network graph depending on train mode
-        self.weights = {}
+        # create the network graph depending on train modes
         self.classes_prediction = tf.constant(-1)
         self.classes_gold = None
-        elif train_mode == 'wysgiwyg_fe':
+        self.save_freq = 100
+        self.keep_prob = tf.placeholder(tf.float32)
+        if train_mode == 'wysiwygFe':
             print('build wysiwyg feature extractor!')
-            # seperate encoding of the images to a feature map
-            self.input = tf.placeholder(dtype=tf.float32, \
-                shape=[None, None, None, 1])
-            self.classes_gold = tf.placeholder(dtype=tf.float32, \
-                shape=[None,num_classes])
-            self.features = WYSIWYGFeatureExtractor.createCNNModel(self, self.input, loaded)           
-            self.classes_prediction = FullyConnectedClassifier.createFullyConnectedClassifier(self, \
-                self.features, loaded)
+            self.input = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
+            self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
+            self.features = WYSIWYGFeatureExtractor.createGraph(self, self.input)           
+            self.classes_prediction = WYSIWYGClassifier.createGraph(self,self.features)
             self.useClassesLoss()
-        elif train_mode == 'bahdanau_encdec':
+            self.save_freq = 1000
+        elif train_mode == 'vggFe':
+            print('build vgg feature extractor!')
+            self.input = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
+            self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
+            self.features = VGGFeatureExtractor.createGraph(self, self.input)
+            self.classes_prediction = VGGClassifier.createGraph(self, self.features)
+            self.useClassesLoss()
+            self.save_freq = 1000
+        elif train_mode == 'alexnetFe':
+            print('build alexnet feature extractor!')
+            self.input = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
+            self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
+            self.features = AlexnetFeatureExtractor.createGraph(self, self.input)
+            self.classes_prediction = AlexnetClassifier.createGraph(self, self.features)
+            self.useClassesLoss()
+            self.save_freq = 1000
+        elif train_mode == 'resnetFe':
+            print('build resnet feature extractor!')
+            self.input = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
+            self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
+            self.features = ResnetFeatureExtractor.createGraph(self, self.input)
+            self.classes_prediction = ResnetClassifier.createGraph(self, self.features)
+            self.useClassesLoss()
+            self.save_freq = 1000
+        elif train_mode == 'densenetFe':
+            print('build densenet feature extractor!')
+            self.input = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
+            self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
+            self.features = DensenetFeatureExtractor.createGraph(self, self.input)
+            self.classes_prediction = DensenetClassifier.createGraph(self, self.features)
+            self.useClassesLoss()
+            self.save_freq = 1000
+        elif train_mode == 'birowEnc_bahdanauDec':
+            print('build encoder decoder stack with bahdanau attention!')
+            self.input = tf.placeholder(dtype=tf.float32, shape= [None, None, None, 512])
+            self.label_gold = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])            
+            outputs, state = BidirectionalRowEncoder.createGraph(self, self.input)
+            self.label_prediction = BahdanauDecoder.createGraph(self, outputs, state)
+            self.useLabelLoss()
+        elif train_mode == 'bicolEnc_bahdanauDec':
             print('build encoder decoder stack with bahdanau attention!')
             # the basic attention module
             self.input = tf.placeholder(dtype=tf.float32, shape= [None, None, None, 512])
             self.label_gold = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])            
-            outputs, state = BaselineEncoder.createBaselineEncoder(self, self.input)
-            self.label_prediction = LibraryDecoder.createAttentionModule(self, outputs, \
-                state)
+            outputs, state = BidrectionalRowEncoder.createGraph(self, self.input)
+            self.label_prediction = BahndanauDecoder.createGraph(self, outputs, state)
             self.useLabelLoss()
-        elif train_mode == 'vgg_fe':
-            print('build vgg feature extractor!')
-            # seperate encoding of the images to a feature map
-            self.input = tf.placeholder(dtype=tf.float32, \
-                shape=[None, None, None, 1])
-            self.classes_gold = tf.placeholder(dtype=tf.float32, \
-                shape=[None,num_classes])
-            self.features = VGGNet.createCNNModel(self, self.input, loaded)
-            self.classes_prediction = FullyConnectedClassifierVGG.createFullyConnectedClassifier(self, \
-                self.features, loaded)
-            self.useClassesLoss()
-        '''if train_mode == 'wysgiwyg_e2e':
-            print('build model type 0!')
-            # end-to-end training like the original wysiwyg
-            # whole pipeline encoding -> refinement -> decoding
-            # very slow and space consuming, so care about the capacity
-            self.input = tf.placeholder(dtype=tf.float32, \
-                shape=[None, None, None, 1])
-            self.label_gold = tf.placeholder(dtype=tf.int32, \
-                shape=[None,max_num_tokens])
-            self.classes_gold = tf.placeholder(dtype=tf.int32, \
-                shape=[None,num_classes])
-            self.features = WYSIWYGFeatureExtractor.createCNNModel(self, self.input, loaded)
-            self.featuresRefined = WYSIWYGEncoder.createEncoderLSTM(self, self.features)
-            self.label_prediction = WYSIWYGDecoder.createDecoderLSTM(self, \
-                self.featuresRefined)            
-            self.classes_prediction = tf.sigmoid(FullyConnectedClassifier.createFullyConnectedClassifier(self, \
-                self.features, loaded))
-            self.useLabelLoss()
-        elif train_mode == 2:
-            print('build model type 2!')
-            # seperate refinement of the feature map
-            self.input = tf.placeholder(dtype=tf.float32, shape= \
-                [None, None, None, 512])
-            self.classes_gold = tf.placeholder(dtype=tf.float32, \
-                shape=[None,num_classes])
-            self.featuresRefined = WYSIWYGEncoder.createEncoderLSTM(self, self.input)
-            self.classes_prediction = FullyConnectedClassifier.createFullyConnectedClassifier(self, \
-                self.featuresRefined, loaded)
-            self.useClassesLoss()
-        elif train_mode == 3:
-            print('build model type 3!')
-            # seperate decoding of the feature map
-            self.input = tf.placeholder(dtype=tf.float32, shape= \
-                [None, None, None, 512])
-            self.label_gold = tf.placeholder(dtype=tf.int32, \
-                shape=[None,max_num_tokens])
-            self.label_prediction = WYSIWYGDecoder.createDecoderLSTM(self, self.input)
-            self.useLabelLoss()
-        elif train_mode == 4:
-            print('build model type 4!')
-            # a more simple attention module
-            self.input = tf.placeholder(dtype=tf.float32, shape= \
-                [None, None, None, 512])
-            self.label_gold = tf.placeholder(dtype=tf.int32, \
-                shape=[None,max_num_tokens])
-            self.label_prediction = SimpleAttentionModule.createSimpleAttentionModule(self, \
-                self.input)
-            self.useLabelLoss()
-        elif train_mode == 5:
-            print('build model type 5!')
+        elif train_mode == 'quadroEnc_bahdanauDec':
+            print('build encoder decoder stack with bahdanau attention!')
             # the basic attention module
-            self.input = tf.placeholder(dtype=tf.float32, shape= \
-                [None, None, None, 512])
-            self.label_gold = tf.placeholder(dtype=tf.int32, \
-                shape=[None,max_num_tokens])            
-            outputs, self.encoded = BaselineEncoder.createBaselineEncoder(self, \
-                self.input)
-            self.label_prediction = BaselineDecoder.createBaselineDecoder(self, self.encoded)
-            #print('in init 5')
-            #code.interact(local=dict(globals(), **locals()))
-            self.useLabelLoss()'''
+            self.input = tf.placeholder(dtype=tf.float32, shape= [None, None, None, 512])
+            self.label_gold = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])            
+            outputs, state = BidrectionalRowEncoder.createGraph(self, self.input)
+            self.label_prediction = BahndanauDecoder.createGraph(self, outputs, state)
+            self.useLabelLoss()
+        elif train_mode == 'wysiwygFe_bicolEnc_bahdanauDec':
+            print('build encoder decoder stack with bahdanau attention!')
+            # the basic attention module
+            self.input = tf.placeholder(dtype=tf.float32, shape= [None, None, None, 512])
+            self.label_gold = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])            
+            outputs, state = BidrectionalRowEncoder.createGraph(self, self.input)
+            self.label_prediction = BahndanauDecoder.createGraph(self, outputs, state)
+            self.useLabelLoss()
+        else:
+            print('train mode ' + train_mode + ' does not exist!')
+        # different attention modules!!!
         assert self.input != None
         assert self.loss != None
         self.useAdadeltaOptimizer()
@@ -149,6 +135,7 @@ class Model:
                 seed = np.random.standard_normal(v.shape.as_list()) * 0.05
                 v = v.assign(seed)
                 x = self.session.run(v)
+                #print(seed.shape)
             self.save()
         tf.summary.histogram('predictionHisto', self.predictionDistribution)
         tf.summary.scalar('predictionAvg', tf.reduce_mean(self.predictionDistribution))
@@ -246,18 +233,21 @@ class Model:
                 train_accuracy=train_accuracy,val_accuracy=val_accuracy)
 
     def trainStep(self, inp, groundtruth):
-        if self.step % 10 == 0:
-            feed_dict={self.input: inp, self.groundtruth: groundtruth}
+        if self.step % (self.save_freq / 10) == 0:
+            #code.interact(local=dict(globals(), **locals()))
+            feed_dict={self.input: inp, self.groundtruth: groundtruth, \
+                self.keep_prob:0.5}
             _,lossValue,summs,dis,pred = self.session.run([self.train_op, \
                 self.loss, self.summaries, \
                 self.predictionDistribution, self.prediction], feed_dict=feed_dict)
             self.writer.add_summary(summs, global_step=self.step)
             self.writeInLogfile(pred, dis, groundtruth)
             print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
+            print('global step: ' + str(self.step))
             print('Current Weights:')
             self.printTrainableVariables()
             print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
-            if self.step % 50 == 0:
+            if self.step % self.save_freq == 0:
                 print('#############################################################')
                 print('#############################################################')
                 print('#############################################################')
@@ -267,7 +257,8 @@ class Model:
                 print('#############################################################')
                 self.save()
         else:
-            feed_dict={self.input: inp, self.groundtruth: groundtruth}
+            feed_dict={self.input: inp, self.groundtruth: groundtruth, \
+                self.keep_prob:0.5}
             _,lossValue, pred = self.session.run([self.train_op, \
                 self.loss, self.prediction], feed_dict=feed_dict)
         self.step = self.step + 1
@@ -284,7 +275,8 @@ class Model:
         return float(matches) / float(count)
 
     def valStep(self, inp, groundtruth):
-        feed_dict={self.input: inp, self.groundtruth: groundtruth}
+        feed_dict={self.input: inp, self.groundtruth: groundtruth, \
+            self.keep_prob:1.0}
         lossValue, dis, pred = self.session.run([self.loss, \
             self.predictionDistribution, self.prediction], feed_dict=feed_dict)
         self.writeInLogfile(pred, dis, groundtruth)
@@ -309,7 +301,8 @@ class Model:
                 self.predictionDistributionsDone = self.predictionDistributionsDone + 1
 
     def predict(self, inp, gt):
-        feed_dict={self.input: inp, self.label_gold: gt}
+        feed_dict={self.input: inp, self.groundtruth: gt, \
+            self.keep_prob:1.0}
         #code.interact(local=dict(globals(), **locals()))
         return self.session.run(self.prediction, feed_dict=feed_dict)
 
@@ -325,7 +318,8 @@ class Model:
                 learning_rate=self.learning_rate, \
                 nr_epochs=self.nr_epochs, 
                 vocabulary=self.vocabulary,
-                model_dir=self.model_dir)
+                model_dir=self.model_dir, \
+                current_epoch=self.current_epoch)
         saver = tf.train.Saver()
         #print('in der save methode 2')
         #code.interact(local=dict(globals(), **locals()))
@@ -360,15 +354,20 @@ def load(model_dir, train_mode, max_num_tokens):
     capacity = np.asscalar(params['capacity'])
     learning_rate = np.asscalar(params['learning_rate'])
     nr_epochs = np.asscalar(params['nr_epochs'])
+    try:
+        current_epoch = np.asscalar(params['current_epoch'])
+    except Exception:
+        current_epoch = 1
     print('try to restore model!')
     tf.reset_default_graph()
     session = tf.Session()
     model = Model(num_classes, max_num_tokens, model_dir, vocabulary, capacity, \
-        learning_rate, nr_epochs, train_mode=train_mode, loaded=True, session=session)    
+        learning_rate, nr_epochs, train_mode=train_mode, loaded=True, session=session, \
+        current_epoch=current_epoch)    
     saver = tf.train.Saver()
     print('load variables!')
     saver.restore(session, model_dir + '/weights.ckpt')
     model.printGlobalVariables()
     print('model restored!')
-    code.interact(local=dict(globals(), **locals()))
+    #code.interact(local=dict(globals(), **locals()))
     return model

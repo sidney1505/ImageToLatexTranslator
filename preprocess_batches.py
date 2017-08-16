@@ -21,7 +21,7 @@ def preprocess(params):
     #
     batch0 = np.load(batch_dir + '/' + batchfiles[0])
     max_num_tokens = len(batch0['labels'][0])
-    model = models.ModelFactory.load(model_path, 1, max_num_tokens)
+    model = models.ModelFactory.load(model_path, params.trainmode, max_num_tokens)
     for batchfile in batchfiles:
         batch = np.load(batch_dir + '/' + batchfile)
         preds = []
@@ -59,6 +59,9 @@ def process_args(args):
                         type=str, default=os.environ['MODEL_IN_USE'],
                         help=('Directory containing model.'
                         ))
+    parser.add_argument('--trainmode', dest='trainmode',
+                        type=str, default='alexnetFe',
+                        help=(''))
     parser.add_argument('--batch-dir', dest='batch_dir',
                         type=str, default=os.environ['TBD'],
                         help=('path where the batches are stored'))

@@ -59,7 +59,7 @@ def createMinibatch(batch_data, minibatch_it, minibatchsize):
 
 def train(params):
     print("training starts now!")
-    params.traintype = int(params.traintype)
+    #params.trainmode = int(params.trainmode)
     params.capacity = int(params.capacity)
     params.load_model = bool(params.load_model)
     # check if given paths really exist
@@ -101,20 +101,20 @@ def train(params):
     max_num_tokens = len(batch0['labels'][0])
 
     if params.load_model:
-        model = models.ModelFactory.load(params.model_dir, params.traintype, max_num_tokens)
+        model = models.ModelFactory.load(params.model_dir, params.trainmode, max_num_tokens)
         model.capacity = params.capacity
     else:
         # create the model directory
         if not os.path.exists(params.model_dir):
             os.makedirs(params.model_dir)
-        params.model_dir = params.model_dir + '/model-' + \
+        params.model_dir = params.model_dir + '/' + params.trainmode + '_' + \
             str(datetime.datetime.now())
         if not os.path.exists(params.model_dir):
             os.makedirs(params.model_dir)
         #code.interact(local=dict(globals(), **locals()))
         tf.reset_default_graph()
         model = Model(num_classes, max_num_tokens, params.model_dir, vocabulary, capacity= \
-            params.capacity, train_mode=params.traintype)
+            params.capacity, train_mode=params.trainmode)
     # ensures capability of loading models
     print('model stored at:')
     print(model.model_dir)
@@ -123,16 +123,24 @@ def train(params):
     if params.phase == 'test':
         print('Start testing!!!')
         #
-        results = model.model_dir + '/results.txt'
-        shutil.rmtree(results, ignore_errors=True)
-        fout = open(results, 'w')
+        if model.used_loss == 'label':
+            results = model.model_dir + '/results.txt'
+            shutil.rmtree(results, ignore_errors=True)
+            fout = open(results, 'w')
+        else:
+            false2false = np.zeros(model.num_classes)
+            false2true = np.zeros(model.num_classes)
+            true2true = np.zeros(model.num_classes)
+            true2false = np.zeros(model.num_classes)
         test_batch_it = 0
         test_batch_images, test_minibatchsize, test_batch_it, \
             test_batch_labels, new_test_iteration, test_batch_classes_true, \
             test_batch_imgnames = loadBatch(params.test_batch_dir, test_batch_names, \
             test_batch_it, model, model.capacity)
         num_samples = 0
-        num_correct = 0
+        samples_correct = 0
+        tokens_correct = 0
+        num_tokens = 0
         while not new_test_iteration: # randomise!!!
             print(test_batch_it)
             test_batch_predictions = []
@@ -156,40 +164,83 @@ def train(params):
                     label_gold = ''
                     all_were_correct = 1
                     for token in range(test_minibatch_labels.shape[1]):
+                        num_tokens = num_tokens + 1
                         if test_minibatch_predictions[batch][token] != \
                                 test_minibatch_labels[batch][token]:
                             all_were_correct = 0
-                    num_correct = num_correct + all_were_correct
-                    for token in range(test_minibatch_labels.shape[1]):
-                        if len(model.vocabulary) == \
-                                test_minibatch_predictions[batch][token]+1:
-                            break
-                        label_pred = label_pred + model.vocabulary[ \
-                            test_minibatch_predictions[batch][token]] + ' '
-                        #code.interact(local=dict(globals(), **locals()))
-                    for token in range(test_minibatch_labels.shape[1]):
-                        if len(model.vocabulary)== \
-                            int(test_minibatch_labels[batch][token])+1:
-                            break
-                        label_gold = label_gold + model.vocabulary[ \
-                            int(test_minibatch_labels[batch][token])] + ' '                        
-                    line = line + label_gold[:-1] + '\t' + label_pred[:-1] + '\t' + '-1' + \
-                        '\t' + '-1' + '\t'
-                    print(label_gold[:-1])
-                    print('')
-                    print(label_pred[:-1])
-                    print('')
-                    print(str(num_correct) + ' / ' + str(num_samples))
-                    fout.write(line)
-                    code.interact(local=dict(globals(), **locals()))
+                        else:
+                            tokens_correct = tokens_correct + 1
+                    samples_correct = samples_correct + all_were_correct
+                    if model.used_loss == 'label':
+                        for token in range(test_minibatch_labels.shape[1]):
+                            if len(model.vocabulary) == \
+                                    test_minibatch_predictions[batch][token]+1:
+                                break
+                            label_pred = label_pred + model.vocabulary[ \
+                                test_minibatch_predictions[batch][token]] + ' '
+                            #code.interact(local=dict(globals(), **locals()))
+                        for token in range(test_minibatch_labels.shape[1]):
+                            if len(model.vocabulary)== \
+                                int(test_minibatch_labels[batch][token])+1:
+                                break
+                            label_gold = label_gold + model.vocabulary[ \
+                                int(test_minibatch_labels[batch][token])] + ' '                        
+                        line = line + label_gold[:-1] + '\t' + label_pred[:-1] + '\t' + \
+                            '-1' + '\t' + '-1' + '\t'
+                        print(label_gold[:-1])
+                        print('')
+                        print(label_pred[:-1])
+                        print('')
+                        print(str(samples_correct) + ' / ' + str(num_samples))
+                        fout.write(line)
+                    else:
+                        for token in range(test_minibatch_labels.shape[1]):
+                            if test_minibatch_labels[batch][token] == 0 and \
+                                    test_minibatch_predictions[batch][token] == 0:
+                                false2false = false2false + 1
+                            elif test_minibatch_labels[batch][token] == 0 and \
+                                    test_minibatch_predictions[batch][token] == 1:
+                                false2true = false2true + 1
+                            elif test_minibatch_labels[batch][token] == 1 and \
+                                    test_minibatch_predictions[batch][token] == 1:
+                                true2true = true2true + 1
+                            elif test_minibatch_labels[batch][token] == 1 and \
+                                    test_minibatch_predictions[batch][token] == 0:
+                                true2false = true2false + 1
+                            else:
+                                print('error!!!')
+                                code.interact(local=dict(globals(), **locals()))
+                    if batch % 10 == 0:
+                        absolute_acc = float(samples_correct) / float(num_samples)
+                        token_acc = float(tokens_correct) / float(num_tokens)
+                        print('abs: ' + str(absolute_acc) + ', tok: ' + str(token_acc))
             test_batch_images, test_minibatchsize, test_batch_it, \
                 test_batch_labels, new_test_iteration, test_batch_classes_true, \
                 test_batch_imgnames = loadBatch(params.test_batch_dir, test_batch_names, \
                 test_batch_it, model, model.capacity)
-        fout.close()
+        absolute_acc = float(samples_correct) / float(num_samples)
+        absolute_acc_path = model.model_dir + '/absolute_accuracy.txt'
+        shutil.rmtree(absolute_acc_path, ignore_errors=True)
+        absolute_acc_writer = open(absolute_acc_path, 'w')
+        absolute_acc_writer.write(str(absolute_acc))
+        absolute_acc_writer.close()
+        token_acc = float(tokens_correct) / float(num_tokens)
+        token_acc_path = model.model_dir + '/token_accuracy.txt'
+        shutil.rmtree(token_acc_path, ignore_errors=True)
+        token_acc_writer = open(token_acc_path, 'w')
+        token_acc_writer.write(str(token_acc))
+        token_acc_writer.close()
+        print('abs: ' + str(absolute_acc) + ', tok: ' + str(token_acc))
+        if model.used_loss == 'label':
+            fout.close()
+        else:
+            with open(model.model_dir + '/confusion.npz', 'w') as fout:
+                np.savez(fout,false2false=false2false,false2true=false2true, \
+                    true2true=true2true,true2false=true2false)
     elif params.phase == 'training':
         # the training loop
-        for epoch in range(model.nr_epochs):
+        last_loss = float("inf")
+        for epoch in range(model.current_epoch, model.nr_epochs):
             train_batch_it = 0
             # 
             train_batch_images, train_minibatchsize, train_batch_it, \
@@ -198,10 +249,10 @@ def train(params):
                 train_batch_it, model, model.capacity)
             val_minibatch_loss_old = float("inf")
             train_stats = np.zeros(model.num_classes + 1)
+            train_batch_accuracies = []
+            train_batch_losses = []
             while not new_train_iteration: # randomise!!!
                 print(train_batch_it)
-                train_batch_losses = []
-                train_batch_accuracies = []
                 for train_minibatch_it in range(train_batch_images.shape[0] \
                         / train_minibatchsize):
                     # create the minibatches
@@ -218,9 +269,14 @@ def train(params):
                         str(train_minibatch_images.shape) + ' : ' + \
                         str(train_minibatch_labels.shape) + ' : ' + \
                         str(train_minibatch_loss_value) + ' : ' + \
-                        str(train_minibatch_accuracy))
+                        str(train_minibatch_accuracy)) + ' : ' + \
+                        str(np.mean(train_batch_accuracies))
                     train_batch_losses.append(train_minibatch_loss_value)
                     train_batch_accuracies.append(train_minibatch_accuracy)
+                train_batch_images, train_minibatchsize, train_batch_it, \
+                    train_batch_labels, new_train_iteration, train_batch_classes_true, \
+                    train_batch_imgnames = loadBatch(params.train_batch_dir, \
+                    train_batch_names, train_batch_it, model, model.capacity)
             val_batch_it = 0
             # 
             val_batch_images, val_minibatchsize, val_batch_it, \
@@ -252,19 +308,19 @@ def train(params):
                         str(val_minibatch_accuracy))
                     val_batch_losses.append(val_minibatch_loss_value)
                     val_batch_accuracies.append(val_minibatch_accuracy)
-            print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-            print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')            
-            print('minibatch(' + str(epoch) + ',' + str(val_batch_it) \
-                + ',' + str(val_minibatch_it * val_minibatchsize) + ') : ' + \
-                str(val_minibatch_images.shape) + ' : ' + \
-                str(val_minibatch_labels.shape) + ' : ' + \
-                str(val_minibatch_loss_value) + ' : ' + \
-                str(val_minibatch_accuracy))
-            print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
-            print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
+                val_batch_images, val_minibatchsize, val_batch_it, \
+                    val_batch_labels, new_val_iteration, val_batch_classes_true, \
+                    val_batch_imgnames = loadBatch(params.val_batch_dir, val_batch_names, \
+                    val_batch_it, model, model.capacity)
             # adds a log
             model.addLog(np.mean(train_batch_losses), np.mean(val_batch_losses), \
                 np.mean(train_batch_accuracies), np.mean(val_batch_accuracies), epoch)
+            model.current_epoch = model.current_epoch + 1
+            if last_loss > np.mean(val_batch_losses):
+                last_loss = np.mean(val_batch_losses)
+            else:
+                print('early stop!')
+                break
     else:
         print(params.phase + " is no valid phase!")
     model.session.close()
@@ -274,7 +330,7 @@ def process_args(args):
     parser.add_argument('--phase', dest='phase',
                         type=str, default='training',
                         help=('The phase (training or prediction).'))
-    parser.add_argument('--traintype', dest='traintype',
+    parser.add_argument('--trainmode', dest='trainmode',
                         type=str, default=1,
                         help=('Type of the training/evaluation.\
                              0 = normal, 1 = pretraining cnn only, \

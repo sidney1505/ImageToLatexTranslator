@@ -1,8 +1,8 @@
 import tensorflow as tf
 import tflearn.layers.conv
 
-def createCNNModel(model, inputpx, loaded):
-    with tf.variable_scope("wysiwygConv", reuse=None):
+def createGraph(model, inputpx):
+    with tf.variable_scope("vggFe", reuse=None):
         print('create cnn')
 
         with tf.variable_scope("layer1", reuse=None):

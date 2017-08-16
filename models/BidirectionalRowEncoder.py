@@ -1,13 +1,7 @@
 import code
-import os
-import shutil
 import tensorflow as tf
-import tflearn
-import numpy as np
-from tflearn.layers.core import input_data, dropout, fully_connected
-from tflearn.layers.conv import conv_2d, max_pool_2d
 
-def createBaselineEncoder(model,features):
+def createGraph(model,features):
     with tf.variable_scope("basicEncoder", reuse=None):
         shape = tf.shape(features)
         batchsize = shape[0]
@@ -25,6 +19,5 @@ def createBaselineEncoder(model,features):
         state_bw_hidden, state_bw = state_bw
         state_hidden = tf.concat([state_fw_hidden,state_bw_hidden],1)
         state = tf.concat([state_fw,state_bw],1)
-        #state = tf.contrib.layers.batch_norm(state)
         output = tf.concat([output[0],output[1]],2)
     return output, (state_hidden, state)
