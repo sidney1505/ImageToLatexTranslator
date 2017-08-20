@@ -2,8 +2,8 @@ import tensorflow as tf
 import tflearn.layers.conv
 
 def createGraph(model, inputpx):
-    with tf.variable_scope("wysiwygConv", reuse=None):
-        print('create cnn')
+    model.feature_extractor = "wysiwygConv"
+    with tf.variable_scope(model.feature_extractor, reuse=None):
         with tf.variable_scope("layer1", reuse=None):
             w1 = tf.get_variable('weight', [3,3,1,64], tf.float32, tf.random_normal_initializer())
             features = tf.nn.conv2d(inputpx, w1, strides=[1,1,1,1], padding='SAME')

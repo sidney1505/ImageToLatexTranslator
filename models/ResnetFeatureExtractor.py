@@ -6,7 +6,7 @@ import tensorflow as tf
 def createGraph(model, inputpx):
     # Residual blocks
     # 32 layers: n=5, 56 layers: n=9, 110 layers: n=18
-    n = 5
+    n = 18
     with tf.variable_scope("resnetFe", reuse=None):
         net = tflearn.conv_2d(inputpx, 16, 3, regularizer='L2', weight_decay=0.0001)
         net = tflearn.residual_block(net, n, 16)

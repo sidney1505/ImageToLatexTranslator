@@ -3,7 +3,8 @@ import tensorflow as tf
 import tflearn
 
 def createGraph(model, features):
-    with tf.variable_scope("fullyConnected", reuse=None):
+    model.classifier = "fullyConnected"
+    with tf.variable_scope(model.classifier, reuse=None):
         features = tflearn.layers.conv.global_avg_pool(features)
 
         w1 = tf.get_variable('w1', [features.shape[1],1000], tf.float32, \

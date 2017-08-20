@@ -60,7 +60,8 @@ def createMinibatch(batch_data, minibatch_it, minibatchsize):
 def train(params):
     print("training starts now!")
     #params.trainmode = int(params.trainmode)
-    params.capacity = int(params.capacity)
+    if params.capacity != None:
+        params.capacity = int(params.capacity)
     params.load_model = bool(params.load_model)
     # check if given paths really exist
     if params.phase == "training":
@@ -91,30 +92,33 @@ def train(params):
         "Vocabulary file doesn't exists!"
 
     # reads the vocabulary from file
-    vocabulary = open(params.vocab_path).readlines()
+    '''vocabulary = open(params.vocab_path).readlines()
     vocabulary[-1] = vocabulary[-1] + '\n'
     vocabulary = [a[:-1] for a in vocabulary]
-    vocabulary.append('END')
+    vocabulary.append('END')'''
+    vocabulary = open(params.vocab_path).read() + '\n' + 'END'
+
+    train_name = params.train_mode
+    s = params.train_mode.split('_')
+    if len(s) == 3:
+        params.train_mode = s[1] + '_' + s[2]
 
     # extract some needed paramters from the first training batch    
     num_classes = batch0['num_classes']
     max_num_tokens = len(batch0['labels'][0])
+    num_features = batch0['images'].shape[3]
 
     if params.load_model:
-        model = models.ModelFactory.load(params.model_dir, params.trainmode, max_num_tokens)
-        model.capacity = params.capacity
-    else:
-        # create the model directory
-        if not os.path.exists(params.model_dir):
-            os.makedirs(params.model_dir)
-        params.model_dir = params.model_dir + '/' + params.trainmode + '_' + \
-            str(datetime.datetime.now())
-        if not os.path.exists(params.model_dir):
-            os.makedirs(params.model_dir)
         #code.interact(local=dict(globals(), **locals()))
+        model = models.ModelFactory.load(params.model_dir,params.trainmode,max_num_tokens,\
+            params.learning_rate, capacity=params.capacity, \
+            combine_models=params.combine_models, \
+            fe_dir=params.fe_dir, enc_dec_dir=params.enc_dec_dir)
+    else:
         tf.reset_default_graph()
-        model = Model(num_classes, max_num_tokens, params.model_dir, vocabulary, capacity= \
-            params.capacity, train_mode=params.trainmode)
+        model = Model(params.model_dir, num_classes, max_num_tokens, vocabulary, capacity= \
+            params.capacity, train_mode=params.trainmode, learning_rate=params.learning_rate, \
+            num_features=num_features)
     # ensures capability of loading models
     print('model stored at:')
     print(model.model_dir)
@@ -159,9 +163,6 @@ def train(params):
                     test_minibatch_labels)
                 for batch in range(test_minibatch_labels.shape[0]):
                     num_samples = num_samples + 1
-                    line = test_minibatch_imgnames[batch] + '\n'
-                    label_pred = ''
-                    label_gold = ''
                     all_were_correct = 1
                     for token in range(test_minibatch_labels.shape[1]):
                         num_tokens = num_tokens + 1
@@ -172,6 +173,9 @@ def train(params):
                             tokens_correct = tokens_correct + 1
                     samples_correct = samples_correct + all_were_correct
                     if model.used_loss == 'label':
+                        line = test_minibatch_imgnames[batch] + '\t'
+                        label_pred = ''
+                        label_gold = ''
                         for token in range(test_minibatch_labels.shape[1]):
                             if len(model.vocabulary) == \
                                     test_minibatch_predictions[batch][token]+1:
@@ -186,7 +190,7 @@ def train(params):
                             label_gold = label_gold + model.vocabulary[ \
                                 int(test_minibatch_labels[batch][token])] + ' '                        
                         line = line + label_gold[:-1] + '\t' + label_pred[:-1] + '\t' + \
-                            '-1' + '\t' + '-1' + '\t'
+                            '-1' + '\t' + '-1' + '\n'
                         print(label_gold[:-1])
                         print('')
                         print(label_pred[:-1])
@@ -197,16 +201,16 @@ def train(params):
                         for token in range(test_minibatch_labels.shape[1]):
                             if test_minibatch_labels[batch][token] == 0 and \
                                     test_minibatch_predictions[batch][token] == 0:
-                                false2false = false2false + 1
+                                false2false[token] = false2false[token] + 1
                             elif test_minibatch_labels[batch][token] == 0 and \
                                     test_minibatch_predictions[batch][token] == 1:
-                                false2true = false2true + 1
+                                false2true[token] = false2true[token] + 1
                             elif test_minibatch_labels[batch][token] == 1 and \
                                     test_minibatch_predictions[batch][token] == 1:
-                                true2true = true2true + 1
+                                true2true[token] = true2true[token] + 1
                             elif test_minibatch_labels[batch][token] == 1 and \
                                     test_minibatch_predictions[batch][token] == 0:
-                                true2false = true2false + 1
+                                true2false[token] = true2false[token] + 1
                             else:
                                 print('error!!!')
                                 code.interact(local=dict(globals(), **locals()))
@@ -237,6 +241,31 @@ def train(params):
             with open(model.model_dir + '/confusion.npz', 'w') as fout:
                 np.savez(fout,false2false=false2false,false2true=false2true, \
                     true2true=true2true,true2false=true2false)
+            stats = {}
+            for c in range(model.num_classes):
+                num_right = float(false2false[c] + true2true[c])
+                num = float(false2false[c] + true2true[c] + false2true[c] + true2false[c])
+                n = true2true[c] + true2false[c]
+                class_accuracy = num_right / num
+                f2f = false2false[c] / num
+                t2t = true2true[c] / num
+                f2t = false2true[c] / num
+                t2f = true2false[c] / num
+                stats.update({(class_accuracy,c):(model.vocabulary[c], str(f2f), \
+                    str(t2t), str(f2t), str(t2f), str(num))})
+            keys = sorted(stats.keys())
+            s = ''
+            for key in keys:
+                c, f2f, t2t, f2t, t2f, n = stats[key]
+                s = s +'\"'+c+'\" : '+str(key[0])+' : ('+f2f+','+t2t+','+f2t+','+ \
+                    t2f+') : ' + n + '\n'
+            stats_path = model.model_dir + '/stats.txt'
+            shutil.rmtree(stats_path, ignore_errors=True)
+            stats_writer = open(stats_path, 'w')
+            stats_writer.write(s)
+            stats_writer.close()
+
+
     elif params.phase == 'training':
         # the training loop
         last_loss = float("inf")
@@ -320,6 +349,7 @@ def train(params):
                 last_loss = np.mean(val_batch_losses)
             else:
                 print('early stop!')
+                os.environ[model.train_name] = model.model_dir
                 break
     else:
         print(params.phase + " is no valid phase!")
@@ -357,13 +387,37 @@ def process_args(args):
                             if it already exists or \
                             should be stored if not.'))
     parser.add_argument('--capacity', dest='capacity',
-                        type=str, default=100000,
+                        type=str, default=None,
+                        help=('The total amount of floats \
+                            that can be propagated through \
+                            the network at a time. \
+                            Influences the batch size!'))
+    parser.add_argument('--learning_rate', dest='learning_rate',
+                        type=str, default=None,
                         help=('The total amount of floats \
                             that can be propagated through \
                             the network at a time. \
                             Influences the batch size!'))
     parser.add_argument('--vocab-path', dest='vocab_path',
                         type=str, default=os.environ['VOCABS'],
+                        help=('The total amount of floats \
+                            that can be propagated through \
+                            the network at a time. \
+                            Influences the batch size!'))
+    parser.add_argument('--combine_models', dest='combine_models',
+                        type=bool, default=False,
+                        help=('The total amount of floats \
+                            that can be propagated through \
+                            the network at a time. \
+                            Influences the batch size!'))
+    parser.add_argument('--fe_dir', dest='fe_dir',
+                        type=str, default=None,
+                        help=('The total amount of floats \
+                            that can be propagated through \
+                            the network at a time. \
+                            Influences the batch size!'))
+    parser.add_argument('--enc_dec_dir', dest='enc_dec_dir',
+                        type=str, default=None,
                         help=('The total amount of floats \
                             that can be propagated through \
                             the network at a time. \

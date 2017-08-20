@@ -7,7 +7,6 @@ def createGraph(model,features):
         shape = tf.shape(features)
         batchsize = shape[0]
         num_features = features.shape[3].value
-        #code.interact(local=dict(globals(), **locals()))
         features = tf.reshape(features,[batchsize,shape[1]*shape[2],num_features])
         rnncell_fw = tf.contrib.rnn.BasicLSTMCell(1024) # TODO choose parameter
         fw_state = rnncell_fw.zero_state(batch_size=batchsize, dtype=tf.float32)
