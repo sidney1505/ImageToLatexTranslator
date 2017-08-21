@@ -122,10 +122,10 @@ def densenet_block(incoming, nb_layers, growth, bottleneck=True,
 
 def createGraph(model, net):
     # Growth Rate (12, 16, 32, ...)
-    k = 16
+    k = 12
 
     # Depth (40, 100, ...)
-    L = 70
+    L = 40
     nb_layers = int((L - 4) / 3)
     with tf.variable_scope("densenetFe", reuse=None):
         net = tflearn.conv_2d(net, 16, 3, regularizer='L2', weight_decay=0.0001)

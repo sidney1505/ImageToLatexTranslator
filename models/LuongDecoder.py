@@ -8,7 +8,7 @@ def createGraph(model, features, state):
     model.decoder = "attentionModule"
     with tf.variable_scope(model.decoder, reuse=None):
         rnncell = tf.contrib.rnn.BasicLSTMCell(statesize)
-        attention = tf.contrib.seq2seq.BahdanauAttention(1024, features) # hyperparam
+        attention = tf.contrib.seq2seq.LuongAttention(statesize, features) # hyperparam
         attention_cell = tf.contrib.seq2seq.AttentionWrapper(rnncell, attention)
         initial_state = attention_cell.zero_state(tf.shape(features)[0],tf.float32).clone( \
             cell_state=state)

@@ -8,12 +8,20 @@ import models.ModelFactory
 def preprocess(params):    
     print("preprocessing starts now!")
     # the directory, where the training batches are stored
+    if params.traintype != None:
+        read_path = '/home/sbender/tmp/' + params.traintype + '.tmp'
+        if not os.path.exists(read_path):
+            print(read_path + ' does not exist!')
+            quit()
+        reader = open(read_path, 'r')
+        model_dir = reader.read()
+    else:
+        model_dir = params.model_dir
     batch_dir = params.batch_dir
     assert os.path.exists(batch_dir), batch_dir
     batchfiles = os.listdir(batch_dir)
     #
-    model_path = params.model_path
-    assert os.path.exists(model_path), model_path
+    assert os.path.exists(model_dir), model_dir
     #
     output_dir = params.output_dir
     shutil.rmtree(output_dir, ignore_errors=True)
@@ -21,7 +29,7 @@ def preprocess(params):
     #
     batch0 = np.load(batch_dir + '/' + batchfiles[0])
     max_num_tokens = len(batch0['labels'][0])
-    model = models.ModelFactory.load(model_path, params.trainmode, max_num_tokens)
+    model = models.ModelFactory.load(model_dir, max_num_tokens)
     for batchfile in batchfiles:
         batch = np.load(batch_dir + '/' + batchfile)
         preds = []
@@ -55,13 +63,14 @@ def preprocess(params):
 
 def process_args(args):
     parser = argparse.ArgumentParser(description='description')
-    parser.add_argument('--model-path', dest='model_path',
-                        type=str, default=os.environ['MODEL_IN_USE'],
+    parser.add_argument('--traintype', dest='traintype',
+                        type=str, default=None,
                         help=('Directory containing model.'
                         ))
-    parser.add_argument('--trainmode', dest='trainmode',
-                        type=str, default='alexnetFe',
-                        help=(''))
+    parser.add_argument('--model-path', dest='model_dir',
+                        type=str, default=None,
+                        help=('Directory containing model.'
+                        ))
     parser.add_argument('--batch-dir', dest='batch_dir',
                         type=str, default=os.environ['TBD'],
                         help=('path where the batches are stored'))

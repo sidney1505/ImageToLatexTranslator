@@ -59,10 +59,40 @@ def createMinibatch(batch_data, minibatch_it, minibatchsize):
 
 def train(params):
     print("training starts now!")
+    #code.interact(local=dict(globals(), **locals()))
     #params.trainmode = int(params.trainmode)
     if params.capacity != None:
         params.capacity = int(params.capacity)
     params.load_model = bool(params.load_model)
+    if params.load_model and not params.combine_models:
+        if params.model_dir == None:
+            #code.interact(local=dict(globals(), **locals()))
+            read_path = '/home/sbender/tmp/' + params.trainmode + '.tmp'
+            if not os.path.exists(read_path):
+                print(read_path + ' does not exist!')
+                quit()
+            reader = open(read_path, 'r')
+            params.model_dir = reader.read()
+    else:
+        params.model_dir = os.environ['EXP_MODEL_DIR']
+    if params.combine_models and params.fe_dir == None:
+        tm = params.trainmode.split('_')
+        tm = tm[0] + '___' + tm[3]
+        read_path = '/home/sbender/tmp/' + tm + '.tmp'
+        if not os.path.exists(read_path):
+            print(read_path + ' does not exist!')
+            quit()
+        reader = open(read_path, 'r')
+        params.fe_dir = reader.read()
+    if params.combine_models and params.enc_dec_dir == None:
+        tm = params.trainmode.split('_')
+        tm = tm[0] + '_' + tm[1] + '_' + tm[2] + '_'
+        read_path = '/home/sbender/tmp/' + tm + '.tmp'
+        if not os.path.exists(read_path):
+            print(read_path + ' does not exist!')
+            quit()
+        reader = open(read_path, 'r')
+        params.enc_dec_dir = reader.read()
     # check if given paths really exist
     if params.phase == "training":
         assert os.path.exists(params.train_batch_dir), \
@@ -92,16 +122,7 @@ def train(params):
         "Vocabulary file doesn't exists!"
 
     # reads the vocabulary from file
-    '''vocabulary = open(params.vocab_path).readlines()
-    vocabulary[-1] = vocabulary[-1] + '\n'
-    vocabulary = [a[:-1] for a in vocabulary]
-    vocabulary.append('END')'''
     vocabulary = open(params.vocab_path).read() + '\n' + 'END'
-
-    train_name = params.train_mode
-    s = params.train_mode.split('_')
-    if len(s) == 3:
-        params.train_mode = s[1] + '_' + s[2]
 
     # extract some needed paramters from the first training batch    
     num_classes = batch0['num_classes']
@@ -264,8 +285,6 @@ def train(params):
             stats_writer = open(stats_path, 'w')
             stats_writer.write(s)
             stats_writer.close()
-
-
     elif params.phase == 'training':
         # the training loop
         last_loss = float("inf")
@@ -302,6 +321,14 @@ def train(params):
                         str(np.mean(train_batch_accuracies))
                     train_batch_losses.append(train_minibatch_loss_value)
                     train_batch_accuracies.append(train_minibatch_accuracy)
+                    '''if train_minibatch_accuracy > 0.95:
+                        print('early stop!')
+                        #code.interact(local=dict(globals(), **locals()))
+                        write_path = '/home/sbender/tmp/' + model.train_mode + '.tmp'
+                        writer = open(write_path, 'w')
+                        writer.write(model.model_dir)
+                        model.session.close()
+                        return'''
                 train_batch_images, train_minibatchsize, train_batch_it, \
                     train_batch_labels, new_train_iteration, train_batch_classes_true, \
                     train_batch_imgnames = loadBatch(params.train_batch_dir, \
@@ -349,7 +376,10 @@ def train(params):
                 last_loss = np.mean(val_batch_losses)
             else:
                 print('early stop!')
-                os.environ[model.train_name] = model.model_dir
+                write_path = '/home/sbender/tmp/' + model.train_mode + '.tmp'
+                #shutil.rmtree(write_path)
+                writer = open(write_path, 'w')
+                writer.write(model.model_dir)
                 break
     else:
         print(params.phase + " is no valid phase!")
@@ -382,7 +412,7 @@ def process_args(args):
                         help=('Path where the test \
                             batches are stored'))
     parser.add_argument('--model-dir', dest='model_dir',
-                        type=str, default=os.environ['EXP_MODEL_DIR'],
+                        type=str, default=None,
                         help=('Path where the model is stored \
                             if it already exists or \
                             should be stored if not.'))

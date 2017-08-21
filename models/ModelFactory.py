@@ -4,11 +4,13 @@ import numpy as np
 import tensorflow.contrib.slim as slim
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.conv import conv_2d, max_pool_2d
-import WYSIWYGFeatureExtractor, BidirectionalRowEncoder, BahdanauDecoder, WYSIWYGClassifier
+import WYSIWYGFeatureExtractor, BirowEncoder, BahdanauDecoder, WYSIWYGClassifier
 import VGGFeatureExtractor, VGGClassifier
 import AlexnetFeatureExtractor, AlexnetClassifier
 import ResnetFeatureExtractor, ResnetClassifier
 import DensenetFeatureExtractor, DensenetClassifier
+import SimpleEncoder, MonorowEncoder, BirowEncoder, MonocolEncoder, BicolEncoder, QuadroEncoder
+import LuongDecoder, SimplegruDecoder, SimpleDecoder, SimplegruDecoder
 
 class Model:
     def __init__(self,  model_dir, num_classes=None, max_num_tokens=None, \
@@ -154,87 +156,83 @@ class Model:
         # create the network graph depending on train modes
         self.classes_prediction = tf.constant(-1)
         self.classes_gold = None
-        self.save_freq = 100
+        self.save_freq = 1000
         self.keep_prob = tf.placeholder(tf.float32)
-        if self.train_mode == 'wysiwygFe':
-            print('build wysiwyg feature extractor!')
+        # define the feature extractor
+        ts = self.train_mode.split('_')
+        if ts[3] == 'e2e':
             self.input = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
-            self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
-            self.features = WYSIWYGFeatureExtractor.createGraph(self, self.input)
-            self.classes_prediction = WYSIWYGClassifier.createGraph(self,self.features)
-            self.useClassesLoss()
-            self.save_freq = 1000
-        elif self.train_mode == 'vggFe':
-            print('build vgg feature extractor!')
-            self.input = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
-            self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
-            self.features = VGGFeatureExtractor.createGraph(self, self.input)
-            self.classes_prediction = VGGClassifier.createGraph(self, self.features)
-            self.useClassesLoss()
-            self.save_freq = 1000
-        elif self.train_mode == 'alexnetFe':
-            print('build alexnet feature extractor!')
-            self.input = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
-            self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
-            self.features = AlexnetFeatureExtractor.createGraph(self, self.input)
-            self.classes_prediction = AlexnetClassifier.createGraph(self, self.features)
-            self.useClassesLoss()
-            self.save_freq = 1000
-        elif self.train_mode == 'resnetFe':
-            print('build resnet feature extractor!')
-            self.input = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
-            self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
-            self.features = ResnetFeatureExtractor.createGraph(self, self.input)
-            self.classes_prediction = ResnetClassifier.createGraph(self, self.features)
-            self.useClassesLoss()
-            self.save_freq = 1000
-        elif self.train_mode == 'densenetFe':
-            print('build densenet feature extractor!')
-            self.input = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
-            self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
-            self.features = DensenetFeatureExtractor.createGraph(self, self.input)
-            self.classes_prediction = DensenetClassifier.createGraph(self, self.features)
-            self.useClassesLoss()
-            self.save_freq = 1000
-        elif self.train_mode == 'birowEnc_bahdanauDec':
-            print('build encoder decoder stack with bahdanau attention!')
+            if ts[0] == 'wysiwygFe':
+                self.features = WYSIWYGFeatureExtractor.createGraph(self, self.input)
+            elif ts[0] == 'alexnetFe':
+                self.features = AlexnetFeatureExtractor.createGraph(self, self.input)
+            elif ts[0] == 'vggFe':
+                self.features = VGGFeatureExtractor.createGraph(self, self.input)
+            elif ts[0] == 'resnetFe':
+                self.features = ResnetFeatureExtractor.createGraph(self, self.input)
+            elif ts[0] == 'densenetFe':
+                self.features =DensenetFeatureExtractor.createGraph(self, self.input)
+            else:
+                print('e2e must specify an feature extractor!')
+                quit()
+        else:
             self.input = tf.placeholder(dtype=tf.float32, shape= [None, None, None, \
                 self.num_features])
-            #self.input = tf.placeholder(dtype=tf.float32, shape= [None, None, None, 512])
+            self.features = self.input
+        #
+        if ts[1] == '' and ts[2] == '':
+            print('classification!')
+            self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
+            if ts[0] == 'wysiwygFe':
+                self.classes_prediction = WYSIWYGClassifier.createGraph(self, self.features)
+            elif ts[0] == 'alexnetFe':
+                self.classes_prediction = AlexnetClassifier.createGraph(self, self.features)
+            elif ts[0] == 'vggFe':
+                self.classes_prediction = VGGClassifier.createGraph(self, self.features)
+            elif ts[0] == 'resnetFe':
+                self.classes_prediction = ResnetClassifier.createGraph(self, \
+                    self.features)
+            elif ts[0] == 'densenetFe':
+                self.classes_prediction = DensenetClassifier.createGraph(self, self.features)
+            else:
+                print('e2e must specify an feature extractor!')
+                quit()
+            self.useClassesLoss()
+        elif ts[1] != '' and ts[2] != '':
+            print('captioning!')
             self.label_gold = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])
-            outputs, state = BidirectionalRowEncoder.createGraph(self, self.input)
-            self.label_prediction = BahdanauDecoder.createGraph(self, outputs, state)
-            self.useLabelLoss()
-        elif self.train_mode == 'bicolEnc_bahdanauDec':
-            print('build encoder decoder stack with bahdanau attention!')
-            # the basic attention module
-            self.input = tf.placeholder(dtype=tf.float32, shape= [None, None, None, \
-                self.num_features])
-            self.label_gold = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])
-            outputs, state = BidirectionalRowEncoder.createGraph(self, self.input)
-            self.label_prediction = BahdanauDecoder.createGraph(self, outputs, state)
-            self.useLabelLoss()
-        elif self.train_mode == 'quadroEnc_bahdanauDec':
-            print('build encoder decoder stack with bahdanau attention!')
-            # the basic attention module
-            self.input = tf.placeholder(dtype=tf.float32, shape= [None, None, None, \
-                self.num_features])
-            self.label_gold = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])
-            outputs, state = BidirectionalRowEncoder.createGraph(self, self.input)
-            self.label_prediction = BahdanauDecoder.createGraph(self, outputs, state)
-            self.useLabelLoss()
-        elif self.train_mode == 'wysiwygFe_birowEnc_bahdanauDec':
-            print('build encoder decoder stack with bahdanau attention!')
-            # the basic attention module
-            self.input = tf.placeholder(dtype=tf.float32, shape= [None, None, None, \
-                1])
-            self.label_gold = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])
-            self.features = WYSIWYGFeatureExtractor.createGraph(self, self.input)
-            outputs, state = BidirectionalRowEncoder.createGraph(self, self.features)
-            self.label_prediction = BahdanauDecoder.createGraph(self, outputs, state)
+            # define the encoder
+            if ts[1] == 'simpleEnc':
+                outputs, state = SimpleEncoder.createGraph(self, self.features)
+            elif ts[1] == 'monorowEnc':
+                outputs, state = MonorowEncoder.createGraph(self, self.features)
+            elif ts[1] == 'birowEnc':
+                outputs, state = BirowEncoder.createGraph(self, self.features)
+            elif ts[1] == 'monocolEnc':
+                outputs, state = MonocolEncoder.createGraph(self, self.features)
+            elif ts[1] == 'bicolEnc':
+                outputs, state = BicolEncoder.createGraph(self, self.features)
+            elif ts[1] == 'quadroEnc':
+                outputs, state = QuadroEncoder.createGraph(self, self.features)
+            else:
+                print(ts[1] + ' is no valid encoder type!')
+                quit()
+            # define the decoder
+            if ts[2] == 'simpleDec':
+                self.label_prediction = SimpleDecoder.createGraph(self, outputs, state)
+            elif ts[2] == 'simplegruDec':
+                self.label_prediction = SimplegruDecoder.createGraph(self, outputs, state)
+            elif ts[2] == 'bahdanauDec':
+                self.label_prediction = BahdanauDecoder.createGraph(self, outputs, state)
+            elif ts[2] == 'luongDec':
+                self.label_prediction = LuongDecoder.createGraph(self, outputs, state)
+            else:
+                print(ts[2] + ' is no valid decoder type!')
+                quit()
             self.useLabelLoss()
         else:
-            print('train mode ' + self.train_mode + ' does not exist!')
+            print('encoder and decoder must be used together!')
+            quit()
         # different attention modules!!!
         assert self.input != None
         assert self.loss != None
@@ -501,7 +499,13 @@ def load(model_dir, train_mode=None, max_num_tokens=None, learning_rate=None, ca
             learning_rate = np.asscalar(params['learning_rate'])
         else:
             train_mode = None
-        print('try to restore model!')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        print('###                 Try to restore model!                 ###')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
         model = Model(model_dir, max_num_tokens=max_num_tokens, \
             capacity=capacity, learning_rate=learning_rate, \
             train_mode=train_mode, loaded=True, \
@@ -509,8 +513,21 @@ def load(model_dir, train_mode=None, max_num_tokens=None, learning_rate=None, ca
         print('load variables!')
         saver = tf.train.Saver()
         saver.restore(session, model_dir + '/weights.ckpt')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        print('###                    Model restored!                    ###')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
     else:
-        print('try to combine models !')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        print('###                Try to combine models!                 ###')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
         #code.interact(local=dict(globals(), **locals()))
         variables = {}
         fe = load(fe_dir)
@@ -535,24 +552,12 @@ def load(model_dir, train_mode=None, max_num_tokens=None, learning_rate=None, ca
             if v.name in variables.keys():
                 v = v.assign(variables[v.name])
                 x = model.session.run(v)
-        
-    #code.interact(local=dict(globals(), **locals()))
-    model.printGlobalVariables()
-    print('model restored!')
-    #code.interact(local=dict(globals(), **locals()))
+        model.printGlobalVariables()
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        print('###                   Models combined!                    ###')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
     return model
-
-def loadVariables(direc, model):
-    g = tf.Graph()
-    variables = {}
-    with g.as_default():
-        metagraph = tf.train.import_meta_graph(direc + '/weights.ckpt.meta')
-        code.interact(local=dict(globals(), **locals()))
-        metagraph.restore(model.session, direc + '/weights.ckpt')
-        for v in tf.global_variables():
-            value = self.session.run(v)
-            variables.update({v.name, value})
-    for v in tf.trainable_variables():
-        if v.name in variables.keys():
-            v = v.assign(variables[v.name])
-            x = model.session.run(v)
