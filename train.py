@@ -212,6 +212,7 @@ def train(params):
                                 int(test_minibatch_labels[batch][token])] + ' '                        
                         line = line + label_gold[:-1] + '\t' + label_pred[:-1] + '\t' + \
                             '-1' + '\t' + '-1' + '\n'
+                        print(model.train_mode)
                         print(label_gold[:-1])
                         print('')
                         print(label_pred[:-1])
@@ -312,13 +313,14 @@ def train(params):
                     train_minibatch_loss_value, train_minibatch_accuracy = \
                         model.trainStep(train_minibatch_images, train_minibatch_labels)
 
-                    print('minibatch(' + str(epoch) + ',' + str(train_batch_it) \
+                    print('trainminibatch(' + str(epoch) + ',' + str(train_batch_it) \
                         + ',' + str(train_minibatch_it*train_minibatchsize)+') : '+\
                         str(train_minibatch_images.shape) + ' : ' + \
                         str(train_minibatch_labels.shape) + ' : ' + \
                         str(train_minibatch_loss_value) + ' : ' + \
                         str(train_minibatch_accuracy)) + ' : ' + \
-                        str(np.mean(train_batch_accuracies))
+                        str(np.mean(train_batch_accuracies)) + ' : ' + \
+                        model.train_mode
                     train_batch_losses.append(train_minibatch_loss_value)
                     train_batch_accuracies.append(train_minibatch_accuracy)
                     '''if train_minibatch_accuracy > 0.95:
@@ -356,12 +358,13 @@ def train(params):
                     val_minibatch_loss_value, val_minibatch_accuracy = \
                         model.valStep(val_minibatch_images, val_minibatch_labels)
 
-                    print('minibatch(' + str(epoch) + ',' + str(val_batch_it) \
+                    print('valminibatch(' + str(epoch) + ',' + str(val_batch_it) \
                         + ',' + str(val_minibatch_it*val_minibatchsize)+') : '+\
                         str(val_minibatch_images.shape) + ' : ' + \
                         str(val_minibatch_labels.shape) + ' : ' + \
                         str(val_minibatch_loss_value) + ' : ' + \
-                        str(val_minibatch_accuracy))
+                        str(val_minibatch_accuracy)) + ' : ' + \
+                        model.train_mode
                     val_batch_losses.append(val_minibatch_loss_value)
                     val_batch_accuracies.append(val_minibatch_accuracy)
                 val_batch_images, val_minibatchsize, val_batch_it, \

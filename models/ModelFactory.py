@@ -158,6 +158,7 @@ class Model:
         self.classes_gold = None
         self.save_freq = 1000
         self.keep_prob = tf.placeholder(tf.float32)
+        self.is_training = tf.placeholder(tf.bool, [])
         # define the feature extractor
         ts = self.train_mode.split('_')
         if ts[3] == 'e2e':
@@ -182,7 +183,9 @@ class Model:
         #
         if ts[1] == '' and ts[2] == '':
             print('classification!')
-            self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
+            #self.classes_gold = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
+            self.groundtruth = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
+            self.classes_gold = self.groundtruth
             if ts[0] == 'wysiwygFe':
                 self.classes_prediction = WYSIWYGClassifier.createGraph(self, self.features)
             elif ts[0] == 'alexnetFe':
@@ -200,7 +203,9 @@ class Model:
             self.useClassesLoss()
         elif ts[1] != '' and ts[2] != '':
             print('captioning!')
-            self.label_gold = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])
+            #self.label_gold = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])
+            self.groundtruth = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])
+            self.label_gold = self.groundtruth
             # define the encoder
             if ts[1] == 'simpleEnc':
                 outputs, state = SimpleEncoder.createGraph(self, self.features)
@@ -270,7 +275,8 @@ class Model:
     # indicates to fit the predicted label to the gold label as objective
     def useLabelLoss(self):
         with tf.variable_scope("labelLoss", reuse=None):
-            self.groundtruth = self.label_gold
+            #self.groundtruth = self.label_gold
+            
             label_prediction = tf.transpose(self.label_prediction, [1,0,2])
             label_gold = tf.transpose(self.label_gold, [1,0])
             #code.interact(local=dict(globals(), **locals())) 
@@ -284,7 +290,8 @@ class Model:
     # indicates to fit the predicted classes to the gold classes as objective
     def useClassesLoss(self):
         with tf.variable_scope("classesLoss", reuse=None):
-            self.groundtruth = self.classes_gold
+            #self.groundtruth = self.classes_gold
+            
             loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.classes_gold, \
                 logits=self.classes_prediction)
             self.loss = tf.reduce_mean(loss)
@@ -327,17 +334,10 @@ class Model:
             self.train_op = slim.learning.create_train_op(self.loss, optimizer, \
                 summarize_gradients=True)
 
-    def addLog(self, train_loss, val_loss, train_accuracy, val_accuracy, epoch):
-        with open(self.logs+'/log_'+str(epoch)+'.npz', 'w') \
-                as fout:
-            np.savez(fout,train_loss=train_loss,val_loss=val_loss, \
-                train_accuracy=train_accuracy,val_accuracy=val_accuracy)
-
     def trainStep(self, inp, groundtruth):
+        feed_dict={self.input: inp, self.groundtruth: groundtruth, self.is_training:True, \
+            self.keep_prob:0.5}
         if self.step % (self.save_freq / 10) == 0:
-            #code.interact(local=dict(globals(), **locals()))
-            feed_dict={self.input: inp, self.groundtruth: groundtruth, \
-                self.keep_prob:0.5}
             #code.interact(local=dict(globals(), **locals()))
             _,lossValue,summs,dis,pred = self.session.run([self.train_op, \
                 self.loss, self.summaries, \
@@ -352,30 +352,23 @@ class Model:
             if self.step % self.save_freq == 0:
                 self.save()
         else:
-            feed_dict={self.input: inp, self.groundtruth: groundtruth, \
-                self.keep_prob:0.5}
             _,lossValue, pred = self.session.run([self.train_op, \
                 self.loss, self.prediction], feed_dict=feed_dict)
         self.step = self.step + 1
         return lossValue, self.calculateAccuracy(pred, groundtruth)
 
-    def calculateAccuracy(self, pred, gt):
-        matches = 0
-        count = 0
-        for batch in range(pred.shape[0]):
-            for token in range(pred.shape[1]):
-                count = count + 1
-                if pred[batch][token] == gt[batch][token]:
-                    matches = matches + 1
-        return float(matches) / float(count)
-
     def valStep(self, inp, groundtruth):
-        feed_dict={self.input: inp, self.groundtruth: groundtruth, \
+        feed_dict={self.input: inp, self.groundtruth: groundtruth, self.is_training:False, \
             self.keep_prob:1.0}
         lossValue, dis, pred = self.session.run([self.loss, \
             self.predictionDistribution, self.prediction], feed_dict=feed_dict)
-        self.writeInLogfile(pred, dis, groundtruth)
-        return lossValue, self.calculateAccuracy(pred, groundtruth)
+
+    def predict(self, inp, gt):
+        feed_dict={self.input: inp,  self.is_training:False, self.keep_prob:1.0,
+            self.groundtruth:self.groundtruth:np.ones(gt.shape)}
+        print('predict')
+        #code.interact(local=dict(globals(), **locals()))
+        return self.session.run(self.prediction, feed_dict=feed_dict)
 
     def writeInLogfile(self, prediction, prediction_distribution, groundtruth):
         if self.used_loss == 'label':
@@ -395,11 +388,22 @@ class Model:
                 fout.close()
                 self.predictionDistributionsDone = self.predictionDistributionsDone + 1
 
-    def predict(self, inp, gt):
-        feed_dict={self.input: inp, self.groundtruth: gt, \
-            self.keep_prob:1.0}
-        #code.interact(local=dict(globals(), **locals()))
-        return self.session.run(self.prediction, feed_dict=feed_dict)
+    def addLog(self, train_loss, val_loss, train_accuracy, val_accuracy, epoch):
+        with open(self.logs+'/log_'+str(epoch)+'.npz', 'w') as fout:
+            np.savez(fout,train_loss=train_loss,val_loss=val_loss, \
+                train_accuracy=train_accuracy,val_accuracy=val_accuracy)
+        self.writeInLogfile(pred, dis, groundtruth)
+        return lossValue, self.calculateAccuracy(pred, groundtruth)
+
+    def calculateAccuracy(self, pred, gt):
+        matches = 0
+        count = 0
+        for batch in range(pred.shape[0]):
+            for token in range(pred.shape[1]):
+                count = count + 1
+                if pred[batch][token] == gt[batch][token]:
+                    matches = matches + 1
+        return float(matches) / float(count)
 
     def save(self):
         print('#############################################################')
