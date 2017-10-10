@@ -15,7 +15,8 @@ def createGraph(model,features):
         bw_state = rnncell_bw.zero_state(batch_size=batchsize, dtype=tf.float32)
         output, state = \
             tf.nn.bidirectional_dynamic_rnn(rnncell_fw, \
-            rnncell_bw, features, initial_state_fw=fw_state, initial_state_bw=bw_state)
+            rnncell_bw, features, initial_state_fw=fw_state, initial_state_bw=bw_state,
+            parallel_iterations=1)
         state_fw, state_bw = state
         state_fw_hidden, state_fw = state_fw
         state_bw_hidden, state_bw = state_bw
