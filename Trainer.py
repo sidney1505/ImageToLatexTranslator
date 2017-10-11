@@ -29,11 +29,11 @@ class Trainer:
         self.encoder = encoder
         self.decoder = decoder
         self.encoder_size = encoder_size
-        self.decoder_size = decoder_size
+        self.decoder_size = decoder_siheze
         self.optimizer = optimizer
         self.initial_learning_rate = 0.1
 
-    def trainModel(self.):
+    def trainModel(self):
         if self.mode == 'e2e':
             self.model = Model(self.model_dir, self.feature_extractor, \
                 self.encoder, self.decoder, self.encoder_size, \
@@ -44,6 +44,7 @@ class Trainer:
             self.model = Model(self.model_dir, self.feature_extractor, self.optimizer, \
                 self.initial_learning_rate)
             self.train()
+            self.processData()
             fe_dir = self.model.model_dir
             self.model = Model(self.model_dir, self.encoder, self.decoder, \
                 self.encoder_size, self.decoder_size, self.optimizer, \
@@ -59,10 +60,8 @@ class Trainer:
         val_last_loss = float('inf')
         while True:
             train_loss, train_accuracy = self.__iterateOneEpoch('train')
-            val_loss, val_accuracy = iterateOneEpoch('val')
+            val_loss, val_accuracy = self.__iterateOneEpoch('val')
             self.model.current_epoch = self.model.current_epoch + 1
-            #print('validation phase')
-            #code.interact(local=dict(globals(), **locals()))
             if train_last_loss < train_loss:
                 train_last_loss = train_loss
                 val_last_loss = val_loss
@@ -71,11 +70,7 @@ class Trainer:
                 train_last_loss = train_loss
                 val_last_loss = val_loss              
             else:
-                print('early stop!')
-                write_path = '/home/sbender/tmp/' + model.train_mode + '.tmp'
-                #shutil.rmtree(write_path)
-                writer = open(write_path, 'w')
-                writer.write(model.model_dir)
+                print('model starts to overfit!')
                 print('before termination')
                 code.interact(local=dict(globals(), **locals()))
                 break
@@ -95,7 +90,7 @@ class Trainer:
             model_dir = self.findBestModel(feature_extractor, encoder, decoder,\
                 encoder_size, decoder_size, optimizer)
         self.model = Model(model_dir, max_num_tokens=max_num_tokens, loaded=True, \
-            session=session)    
+            session=session)   
         print('load variables!')
         saver = tf.train.Saver()
         saver.restore(session, model_dir + '/weights.ckpt')
@@ -108,7 +103,7 @@ class Trainer:
         print('#############################################################')
 
         
-    def combineModels(self, fe_dir=None, ed_dir=None, , feature_extractor='', \
+    def combineModels(self, fe_dir=None, ed_dir=None, feature_extractor='', \
             encoder='', decoder='', encoder_size='', decoder_size='',
             optimizer='', max_num_tokens=None):
         print('#############################################################')
@@ -147,7 +142,64 @@ class Trainer:
         print('#############################################################')
         return model
 
-    def findBestModel(self, feature_extractor='', encoder='', decoder='', encoder_size='', \
+    def testModel(self):
+        final_loss, final_accuracy = self.__iterateOneEpoch('test')
+        path = '/home/sbender/tmp/' + model.train_mode + '.tmp'
+            #shutil.rmtree(write_path)
+            if os.path.exists(path):
+                reader = open(path, 'r')
+                old_model_dir = reader.readlines()
+                reader2 = open(old_model_dir + 'test/accuracy', 'r')
+                old_final_accuracy = float(reader2.readlines())
+                if old_final_accuracy < final_accuracy:
+                    writer = open(path, 'w')
+                    writer.write(model.model_dir)
+            else:
+                writer = open(path, 'w')
+                writer.write(model.model_dir)
+        return final_accuracy
+
+    def processData(self):
+        for phase in ['train','val','test']:
+            batch_it = 0
+            batch_images, minibatchsize, batch_it, batch_labels, new_iteration, \
+                batch_classes_true, batch_imgnames = __loadBatch(self.__getBatchDir(phase),\
+                self.__getBatchNames(phase), batch_it, self.model)
+            while not new_iteration: # randomise!!!
+                print(batch_it)
+                minibatch_predictions = []
+                for minibatch_it in range(batch_images.shape[0] \
+                        / minibatchsize):
+                    minibatch_images = self.__createMinibatch(batch_images, \
+                        minibatch_it, minibatchsize)
+                    minibatch_prediction = model.predict(model.features, minibatch_images)
+                    minibatch_predictions.append(prediction)
+                batch_prediction = np.concatenate(minibatch_predictions)
+                path = self.dataset_dir + "/" + self.model.feature_extractor + '_' + \
+                    phase + '_batches/batch' + batch_it + '.npz'
+                with open(path, 'w') as fout:
+                    np.savez(fout, images=batch_prediction, labels=batch['labels'], \
+                        num_classes=model.num_classes, \
+                        contained_classes_list=batch['contained_classes_list'],
+                        image_names=batch_imgnames)
+                print(phase + 'batch' + str(batch_it) + " saved! " + str(preds.shape) \
+                    + " : " + str(batch['labels'].shape))
+                batch_images, minibatchsize, batch_it, batch_labels, new_iteration, \
+                    batch_classes_true, batch_imgnames = __loadBatch( \
+                    self.__getBatchDir(phase), self.__getBatchNames(phase), batch_it, \
+                    self.model)
+
+    def __getBatchDir(self, phase): # vorsicht bei encdecOnly!!!
+        return self.dataset_dir + '/' + phase + '_batches'
+
+    def __getBatchNames(self, phase):
+        assert os.path.exists(self.dataset_dir + '/' + phase + '_batches'), \
+            phase + " directory doesn't exists!"
+        batchnames = os.listdir(self.dataset_dir + '/' + phase + '_batches')
+        assert batchnames != [], phase + " batch directory musn't be empty!"
+        return batchnames
+
+    def __findBestModel(self, feature_extractor='', encoder='', decoder='', encoder_size='', \
             decoder_size='', optimizer=''):
         path = self.tmp_dir + '/' + feature_extractor + '_' + encoder + '_' + decoder \
              + '_' + str(encoder_size) + '_' + str(decoder_size) + '_' + optimizer
@@ -158,20 +210,6 @@ class Trainer:
         best_model_path = reader.read()
         reader.close()
         return best_model_path
-
-    def testModel()
-        _,accuracy self.__iterateOneEpoch('test')
-        return accuracy
-
-    def __getBatchDir(self, phase): # vorsicht bei encdecOnly!!!
-        return self.dataset_dir + '/' + phase + '_batch_dir'
-
-    def __getBatchNames(self, phase):
-        assert os.path.exists(self.dataset_dir + '/' + phase + '_batch_dir'), \
-            phase + " directory doesn't exists!"
-        batchnames = os.listdir(self.dataset_dir + '/' + phase + '_batch_dir')
-        assert batchnames != [], phase + " batch directory musn't be empty!"
-        return batchnames
 
     def __loadBatch(self, mode, batch_it):
         batch = None

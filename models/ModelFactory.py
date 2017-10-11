@@ -9,8 +9,14 @@ import VGGFeatureExtractor, VGGClassifier
 import AlexnetFeatureExtractor, AlexnetClassifier
 import ResnetFeatureExtractor, ResnetClassifier
 import DensenetFeatureExtractor, DensenetClassifier
+# import feature extractors
+
+# import encoders
 import SimpleEncoder, MonorowEncoder, BirowEncoder, MonocolEncoder, BicolEncoder, QuadroEncoder
-import LuongDecoder, SimplegruDecoder, SimpleDecoder, SimplegruDecoder
+# import decoders
+import LuongDecoder, SimplegruDecoder
+from Decoders.SimpleDecoder import SimpleDecoder
+from Decoders.BahdanauDecoder import BahdanauDecoder
 
 class Model:
     # train_mode????
@@ -117,7 +123,8 @@ class Model:
                 quit()
             # define the decoder
             if decoder == 'simpleDec':
-                self.label_prediction = SimpleDecoder.createGraph(self, outputs, state)
+                decoder = SimpleDecoder(self)
+                self.label_prediction = decoder.createGraph(self, outputs, state)
             elif decoder == 'simplegruDec':
                 self.label_prediction = SimplegruDecoder.createGraph(self, outputs, state)
             elif decoder == 'bahdanauDec':
@@ -188,7 +195,7 @@ class Model:
                 optimizer = tf.train.AdadeltaOptimizer(self.learning_rate)
         params = tf.trainable_variables()
         gradients = tf.gradients(self.loss, params)
-        clipped_gradients, _ = tf.clip_by_global_norm(gradients, 1.0) # in [1,5]
+        clipped_gradients, _ = tf.clip_by_global_norm(gradients, 2.0) # in [1,5]
         self.update_step = optimizer.apply_gradients(zip(clipped_gradients, params))
         self.train_op = slim.learning.create_train_op(self.loss, optimizer, \
             summarize_gradients=True)
@@ -240,11 +247,6 @@ class Model:
         feed_dict={self.input: inp, self.groundtruth: groundtruth, self.is_training:True, \
             self.keep_prob:0.5}
         if self.step % (self.save_freq / 10) == 0:
-            #code.interact(local=dict(globals(), **locals()))
-            '''_,lossValue,summs,dis,pred, train_prediction, infer_prediction = \
-                self.session.run([self.train_op, self.loss, self.summaries, \
-                self.predictionDistribution, self.prediction, self.train_prediction, \
-                self.infer_prediction], feed_dict=feed_dict)'''
             _,lossValue,summs,dis,pred, train_prediction, infer_prediction = \
                 self.session.run([self.update_step, self.loss, self.summaries, \
                 self.predictionDistribution, self.prediction, self.train_prediction, \
@@ -653,11 +655,11 @@ class Model:
                 quit()
             # define the decoder
             if ts[2] == 'simpleDec':
-                self.label_prediction = SimpleDecoder.createGraph(self, outputs, state)
+                self.label_prediction = SimpleDecoder(self).createGraph(outputs, state)
             elif ts[2] == 'simplegruDec':
                 self.label_prediction = SimplegruDecoder.createGraph(self, outputs, state)
             elif ts[2] == 'bahdanauDec':
-                self.label_prediction = BahdanauDecoder.createGraph(self, outputs, state)
+                self.label_prediction = BahdanauDecoder(self).createGraph(outputs, state)
             elif ts[2] == 'luongDec':
                 self.label_prediction = LuongDecoder.createGraph(self, outputs, state)
             else:

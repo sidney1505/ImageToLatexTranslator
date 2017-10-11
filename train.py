@@ -227,129 +227,132 @@ def iterateOneEpoch(phase, batch_dir, batch_names, model):
 
 
 def train(params):
-    print("training starts now!")
-    #code.interact(local=dict(globals(), **locals()))
-    #params.trainmode = int(params.trainmode)
-    if params.capacity != None:
-        params.capacity = int(params.capacity)
-    params.load_model = bool(params.load_model)
-    if params.load_model and not params.combine_models:
-        if params.model_dir == None:
-            #code.interact(local=dict(globals(), **locals()))
-            read_path = '/home/sbender/tmp/' + params.trainmode + '.tmp'
+    try:
+        print("training starts now!")
+        #code.interact(local=dict(globals(), **locals()))
+        #params.trainmode = int(params.trainmode)
+        if params.capacity != None:
+            params.capacity = int(params.capacity)
+        params.load_model = bool(params.load_model)
+        if params.load_model and not params.combine_models:
+            if params.model_dir == None:
+                #code.interact(local=dict(globals(), **locals()))
+                read_path = '/home/sbender/tmp/' + params.trainmode + '.tmp'
+                if not os.path.exists(read_path):
+                    print(read_path + ' does not exist!')
+                    quit()
+                reader = open(read_path, 'r')
+                params.model_dir = reader.read()
+        else:
+            params.model_dir = os.environ['EXP_MODEL_DIR']
+        if params.combine_models and params.fe_dir == None:
+            tm = params.trainmode.split('_')
+            tm = tm[0] + '___' + tm[3]
+            read_path = '/home/sbender/tmp/' + tm + '.tmp'
             if not os.path.exists(read_path):
                 print(read_path + ' does not exist!')
                 quit()
             reader = open(read_path, 'r')
-            params.model_dir = reader.read()
-    else:
-        params.model_dir = os.environ['EXP_MODEL_DIR']
-    if params.combine_models and params.fe_dir == None:
-        tm = params.trainmode.split('_')
-        tm = tm[0] + '___' + tm[3]
-        read_path = '/home/sbender/tmp/' + tm + '.tmp'
-        if not os.path.exists(read_path):
-            print(read_path + ' does not exist!')
-            quit()
-        reader = open(read_path, 'r')
-        params.fe_dir = reader.read()
-    if params.combine_models and params.enc_dec_dir == None:
-        tm = params.trainmode.split('_')
-        tm = tm[0] + '_' + tm[1] + '_' + tm[2] + '_'
-        read_path = '/home/sbender/tmp/' + tm + '.tmp'
-        if not os.path.exists(read_path):
-            print(read_path + ' does not exist!')
-            quit()
-        reader = open(read_path, 'r')
-        params.enc_dec_dir = reader.read()
-    # check if given paths really exist
-    if params.phase == "training":
-        assert os.path.exists(params.train_batch_dir), \
-            "Train batch directory doesn't exists!"
-        assert os.path.exists(params.val_batch_dir), \
-            "Validation batch directory doesn't exists!"
-        # load the names of the training & validation batchfiles
-        train_batch_names = os.listdir(params.train_batch_dir)
-        assert train_batch_names != [], \
-            "Training batch directory is empty!"
-        val_batch_names = os.listdir(params.val_batch_dir)
-        assert val_batch_names != [], \
-            "Validation batch directory is empty!"
-        batch0 = np.load(params.train_batch_dir + '/' + train_batch_names[0])
-    elif params.phase == "test":
-        assert os.path.exists(params.test_batch_dir), \
-            "Test batch directory doesn't exists!"
-        test_batch_names = os.listdir(params.test_batch_dir)
-        assert test_batch_names != [], \
-            "Validation batch directory is empty!"
-        batch0 = np.load(params.test_batch_dir + '/' + test_batch_names[0])
+            params.fe_dir = reader.read()
+        if params.combine_models and params.enc_dec_dir == None:
+            tm = params.trainmode.split('_')
+            tm = tm[0] + '_' + tm[1] + '_' + tm[2] + '_'
+            read_path = '/home/sbender/tmp/' + tm + '.tmp'
+            if not os.path.exists(read_path):
+                print(read_path + ' does not exist!')
+                quit()
+            reader = open(read_path, 'r')
+            params.enc_dec_dir = reader.read()
+        # check if given paths really exist
+        if params.phase == "training":
+            assert os.path.exists(params.train_batch_dir), \
+                "Train batch directory doesn't exists!"
+            assert os.path.exists(params.val_batch_dir), \
+                "Validation batch directory doesn't exists!"
+            # load the names of the training & validation batchfiles
+            train_batch_names = os.listdir(params.train_batch_dir)
+            assert train_batch_names != [], \
+                "Training batch directory is empty!"
+            val_batch_names = os.listdir(params.val_batch_dir)
+            assert val_batch_names != [], \
+                "Validation batch directory is empty!"
+            batch0 = np.load(params.train_batch_dir + '/' + train_batch_names[0])
+        elif params.phase == "test":
+            assert os.path.exists(params.test_batch_dir), \
+                "Test batch directory doesn't exists!"
+            test_batch_names = os.listdir(params.test_batch_dir)
+            assert test_batch_names != [], \
+                "Validation batch directory is empty!"
+            batch0 = np.load(params.test_batch_dir + '/' + test_batch_names[0])
 
-    #
-    assert os.path.exists(params.model_dir) or not params.load_model, \
-        "Model directory doesn't exists!"
-    assert os.path.exists(params.vocab_path) or not params.vocab_path, \
-        "Vocabulary file doesn't exists!"
+        #
+        assert os.path.exists(params.model_dir) or not params.load_model, \
+            "Model directory doesn't exists!"
+        assert os.path.exists(params.vocab_path) or not params.vocab_path, \
+            "Vocabulary file doesn't exists!"
 
-    # reads the vocabulary from file
-    vocabulary = open(params.vocab_path).read() + '\n' + 'END'
+        # reads the vocabulary from file
+        vocabulary = open(params.vocab_path).read() + '\n' + 'END'
 
-    # extract some needed paramters from the first training batch    
-    num_classes = batch0['num_classes']
-    max_num_tokens = len(batch0['labels'][0])
-    num_features = batch0['images'].shape[3]
+        # extract some needed paramters from the first training batch    
+        num_classes = batch0['num_classes']
+        max_num_tokens = len(batch0['labels'][0])
+        num_features = batch0['images'].shape[3]
 
-    #code.interact(local=dict(globals(), **locals()))
-    if params.load_model:
-        model = models.ModelFactory.load(params.model_dir,params.trainmode,max_num_tokens,\
-            params.learning_rate, capacity=params.capacity, \
-            combine_models=params.combine_models, \
-            fe_dir=params.fe_dir, enc_dec_dir=params.enc_dec_dir)
-    else:
-        tf.reset_default_graph()
-        model = Model(params.model_dir, num_classes, max_num_tokens, vocabulary, capacity= \
-            params.capacity, train_mode=params.trainmode, learning_rate=params.learning_rate, \
-            num_features=num_features)
-    # code.interact(local=dict(globals(), **locals()))
-    # ensures capability of loading models
-    print('model stored at:')
-    print(model.model_dir)
-    #code.interact(local=dict(globals(), **locals()))
-    #model = models.ModelFactory.load(model.model_dir, model.train_mode, max_num_tokens)
-    # creates the first validation batch
-    if params.phase == 'test':
-        test_loss, test_accuracy = iterateOneEpoch('test', params.test_batch_dir, \
-            test_batch_names, model, 0)
-    elif params.phase == 'training':
-        # the training loop
-        train_last_loss = float('inf')
-        val_last_loss = float('inf')
-        while True:
-            train_loss, train_accuracy = iterateOneEpoch('train', params.train_batch_dir,\
-                train_batch_names, model)
-            val_loss, val_accuracy = iterateOneEpoch('val', params.val_batch_dir, \
-                val_batch_names, model)
-            model.current_epoch = model.current_epoch + 1
-            #print('validation phase')
-            #code.interact(local=dict(globals(), **locals()))
-            if train_last_loss < train_loss:
-                train_last_loss = train_loss
-                val_last_loss = val_loss
-                model.decayLearningRate(0.5)
-            elif val_last_loss > val_loss:
-                train_last_loss = train_loss
-                val_last_loss = val_loss              
-            else:
-                print('early stop!')
-                write_path = '/home/sbender/tmp/' + model.train_mode + '.tmp'
-                #shutil.rmtree(write_path)
-                writer = open(write_path, 'w')
-                writer.write(model.model_dir)
-                print('before termination')
-                code.interact(local=dict(globals(), **locals()))
-                break
-    else:
-        print(params.phase + " is no valid phase!")
-    model.session.close()
+        #code.interact(local=dict(globals(), **locals()))
+        if params.load_model:
+            model = models.ModelFactory.load(params.model_dir,params.trainmode,max_num_tokens,\
+                params.learning_rate, capacity=params.capacity, \
+                combine_models=params.combine_models, \
+                fe_dir=params.fe_dir, enc_dec_dir=params.enc_dec_dir)
+        else:
+            tf.reset_default_graph()
+            model = Model(params.model_dir, num_classes, max_num_tokens, vocabulary, capacity= \
+                params.capacity, train_mode=params.trainmode, learning_rate=params.learning_rate, \
+                num_features=num_features)
+        # code.interact(local=dict(globals(), **locals()))
+        # ensures capability of loading models
+        print('model stored at:')
+        print(model.model_dir)
+        #code.interact(local=dict(globals(), **locals()))
+        #model = models.ModelFactory.load(model.model_dir, model.train_mode, max_num_tokens)
+        # creates the first validation batch
+        if params.phase == 'test':
+            test_loss, test_accuracy = iterateOneEpoch('test', params.test_batch_dir, \
+                test_batch_names, model, 0)
+        elif params.phase == 'training':
+            # the training loop
+            train_losses = [float('inf')]
+            val_losses = [float('inf')]
+            while True:
+                train_loss, train_accuracy = iterateOneEpoch('train', params.train_batch_dir,\
+                    train_batch_names, model)
+                val_loss, val_accuracy = iterateOneEpoch('val', params.val_batch_dir, \
+                    val_batch_names, model)
+                model.current_epoch = model.current_epoch + 1
+                #print('validation phase')
+                #code.interact(local=dict(globals(), **locals()))
+                if train_losses[-1] < train_loss:
+                    model.decayLearningRate(0.5)
+                elif val_losses[-1] < val_loss and model.current_epoch > 5:
+                    print('starts to overfit!')
+                    write_path = '/home/sbender/tmp/' + model.train_mode + '.tmp'
+                    #shutil.rmtree(write_path)
+                    writer = open(write_path, 'w')
+                    writer.write(model.model_dir)
+                    print('before termination')
+                    code.interact(local=dict(globals(), **locals()))
+                    break
+                train_losses.append(train_loss)
+                val_losses.append(val_loss)
+
+        else:
+            print(params.phase + " is no valid phase!")
+        model.session.close()
+    except:
+        print('something went wrong!')
+        print(sys.exc_info())
+        code.interact(local=dict(globals(), **locals()))
 
 def process_args(args):
     parser = argparse.ArgumentParser(description='description')
