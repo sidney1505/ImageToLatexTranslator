@@ -11,12 +11,16 @@ import ResnetFeatureExtractor, ResnetClassifier
 import DensenetFeatureExtractor, DensenetClassifier
 # import feature extractors
 
+# import Classifiers
+# from Classifiers.SimpleClassifier import SimpleClassifier
 # import encoders
 import SimpleEncoder, MonorowEncoder, BirowEncoder, MonocolEncoder, BicolEncoder, QuadroEncoder
 # import decoders
 import LuongDecoder, SimplegruDecoder
 from Decoders.SimpleDecoder import SimpleDecoder
+from Decoders.SimplegruDecoder import SimplegruDecoder
 from Decoders.BahdanauDecoder import BahdanauDecoder
+from Decoders.LuongDecoder import LuongDecoder
 
 class Model:
     # train_mode????
@@ -123,14 +127,13 @@ class Model:
                 quit()
             # define the decoder
             if decoder == 'simpleDec':
-                decoder = SimpleDecoder(self)
-                self.label_prediction = decoder.createGraph(self, outputs, state)
+                self.label_prediction = SimpleDecoder(self).createGraph(outputs, state)
             elif decoder == 'simplegruDec':
-                self.label_prediction = SimplegruDecoder.createGraph(self, outputs, state)
+                self.label_prediction = SimplegruDecoder(self).createGraph(outputs, state)
             elif decoder == 'bahdanauDec':
-                self.label_prediction = BahdanauDecoder.createGraph(self, outputs, state)
+                self.label_prediction = BahdanauDecoder(self).createGraph(outputs, state)
             elif decoder == 'luongDec':
-                self.label_prediction = LuongDecoder.createGraph(self, outputs, state)
+                self.label_prediction = LuongDecoder(self).createGraph(outputs, state)
             else:
                 print(decoder + ' is no valid decoder type!')
                 quit()            
@@ -657,11 +660,11 @@ class Model:
             if ts[2] == 'simpleDec':
                 self.label_prediction = SimpleDecoder(self).createGraph(outputs, state)
             elif ts[2] == 'simplegruDec':
-                self.label_prediction = SimplegruDecoder.createGraph(self, outputs, state)
+                self.label_prediction = SimplegruDecoder(self).createGraph(outputs, state)
             elif ts[2] == 'bahdanauDec':
                 self.label_prediction = BahdanauDecoder(self).createGraph(outputs, state)
             elif ts[2] == 'luongDec':
-                self.label_prediction = LuongDecoder.createGraph(self, outputs, state)
+                self.label_prediction = LuongDecoder(self).createGraph(outputs, state)
             else:
                 print(ts[2] + ' is no valid decoder type!')
                 quit()
