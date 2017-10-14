@@ -4,19 +4,21 @@ import numpy as np
 import tensorflow.contrib.slim as slim
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.conv import conv_2d, max_pool_2d
-import WYSIWYGFeatureExtractor, BirowEncoder, BahdanauDecoder, WYSIWYGClassifier
-import VGGFeatureExtractor, VGGClassifier
-import AlexnetFeatureExtractor, AlexnetClassifier
-import ResnetFeatureExtractor, ResnetClassifier
-import DensenetFeatureExtractor, DensenetClassifier
 # import feature extractors
-
-# import Classifiers
-# from Classifiers.SimpleClassifier import SimpleClassifier
+from FeatureExtractors.WYSIWYGFeatureExtractor import WYSIWYGFeatureExtractor
+from FeatureExtractors.AlexnetFeatureExtractor import AlexnetFeatureExtractor
+from FeatureExtractors.VGGFeatureExtractor import VGGFeatureExtractor
+from FeatureExtractors.ResnetFeatureExtractor import ResnetFeatureExtractor
+from FeatureExtractors.DensenetFeatureExtractor import DensenetFeatureExtractor
+# import classifiers
+from Classifiers.SimpleClassifier import SimpleClassifier
 # import encoders
-import SimpleEncoder, MonorowEncoder, BirowEncoder, MonocolEncoder, BicolEncoder, QuadroEncoder
+from Encoders.MonorowEncoder import MonorowEncoder
+from Encoders.BirowEncoder import BirowEncoder
+from Encoders.MonocolEncoder import MonocolEncoder
+from Encoders.BicolEncoder import BicolEncoder
+from Encoders.QuadroEncoder import QuadroEncoder
 # import decoders
-import LuongDecoder, SimplegruDecoder
 from Decoders.SimpleDecoder import SimpleDecoder
 from Decoders.SimplegruDecoder import SimplegruDecoder
 from Decoders.BahdanauDecoder import BahdanauDecoder
@@ -24,36 +26,40 @@ from Decoders.LuongDecoder import LuongDecoder
 
 class Model:
     # train_mode????
-    def __init2__(self, model_dir, feature_extractor='', encoder='',\
-            decoder='', encoder_size='', decoder_size='', optimizer='', \
-            initial_learning_rate='', loaded=False, max_num_tokens=None, session=None, \
-            vocabulary=[], num_classes=None):
+    def __init__(self, model_dir, feature_extractor='', encoder='',\
+            decoder='', encoder_size=-1, decoder_size=-1, optimizer='', \
+            learning_rate=0, vocabulary='', max_num_tokens=None, \
+            capacity=-1, session=None, loaded=False):
         tf.reset_default_graph()
         # temporory solution
         self.num_features = 512
-        self.learning_rate = 0.1
         #
-        if train_mode == None and not loaded:
-            print('either trainmode must be given or model must be loaded!')
-            quit()
         if loaded:
+            # load parameters from given directory
             self.model_dir = model_dir
-            self.num_classes = int(self.readParam('num_classes'))
-            self.vocabulary = np.array(self.readParam('vocabulary').split('\n'))
+            # unchangable parameters
             self.feature_extractor = self.readParam('feature_extractor')
             self.encoder = self.readParam('encoder')
             self.decoder = self.readParam('decoder')
-            self.encoder_size = self.readParam('encoder_size')
-            self.decoder_size = self.readParam('decoder_size')
+            self.encoder_size = int(self.readParam('encoder_size'))
+            self.decoder_size = int(self.readParam('decoder_size'))
+            self.vocabulary = np.array(self.readParam('vocabulary').split('\n'))
+            # changable parameters
             self.optimizer = self.readParam('optimzer')
+            self.learning_rate = self.readParam('learning_rate')
             self.max_num_tokens = int(self.readParam('max_num_tokens'))
             self.capacity = int(self.readParam('capacity'))
+            # implicit parameters
+            self.current_epoch = int(self.readParam('current_epoch'))
+            self.step = int(self.readParam('current_epoch'))
+            self.current_millis = int(self.readParam('current_millis'))
         else:
+            # create directory for the model and store the parameters there
             if not os.path.exists(model_dir):
                 os.makedirs(model_dir)
             model_dir = model_dir + '/' + feature_extractor + '_' + encoder + '_' + \
-                decoder + '_' + encoder_size + '_' + decoder_size + '_' + optimizer + \
-                '_' + str(datetime.datetime.now())
+                decoder + '_' + str(encoder_size) + '_' + str(decoder_size) + '_' + \
+                optimizer + '_' + str(datetime.datetime.now())
             if not os.path.exists(model_dir):
                 os.makedirs(model_dir)
             self.model_dir = model_dir
@@ -65,19 +71,24 @@ class Model:
             self.decoder = decoder
             self.writeParam('decoder',decoder)
             self.encoder_size = encoder_size
-            self.writeParam('encoder_size',encoder_size)
+            self.writeParam('encoder_size',str(encoder_size))
             self.decoder_size = decoder_size
-            self.writeParam('decoder_size',decoder_size)
-            self.num_classes = num_classes
-            self.writeParam('num_classes',str(num_classes))
+            self.writeParam('decoder_size',str(decoder_size))
             self.vocabulary = np.array(vocabulary.split('\n'))
             self.writeParam('vocabulary',str(vocabulary))
+            self.optimizer = optimizer
+            self.writeParam('optimizer',str(optimizer))
+            self.learning_rate = learning_rate
+            self.writeParam('learning_rate',str(learning_rate))
             self.max_num_tokens = max_num_tokens
             self.writeParam('max_num_tokens',str(max_num_tokens))
             self.capacity = capacity
             self.writeParam('capacity',str(capacity))
-            self.optimizer = optimizer
-            self.writeParam('optimizer',str(optimizer))
+            #
+            self.current_epoch = 0
+            self.current_step = 0
+            self.current_millis = 0
+        self.num_classes = len(self.vocabulary)
         # create necessary paths
         self.logs = self.model_dir + '/logs'
         if not os.path.exists(self.logs):
@@ -89,66 +100,71 @@ class Model:
             self.session = tf.Session()
         else:
             self.session = session
-        if feature_extractor != None:
-            self.groundtruth = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
-            self.classes_gold = self.groundtruth
-            if feature_extractor == 'wysiwygFe':
-                self.classes_prediction = WYSIWYGClassifier.createGraph(self, self.features)
-            elif feature_extractor == 'alexnetFe':
-                self.classes_prediction = AlexnetClassifier.createGraph(self, self.features)
-            elif feature_extractor == 'vggFe':
-                self.classes_prediction = VGGClassifier.createGraph(self, self.features)
-            elif feature_extractor == 'resnetFe':
-                self.classes_prediction = ResnetClassifier.createGraph(self, \
-                    self.features)
-            elif feature_extractor == 'densenetFe':
-                self.classes_prediction = DensenetClassifier.createGraph(self, self.features)
+        # placeholders which are necessary to seperate phases
+        self.keep_prob = tf.placeholder(tf.float32)
+        self.is_training = tf.placeholder(tf.bool, [])
+        # building the network graph
+        if self.feature_extractor != '':
+            self.input = tf.placeholder(dtype=tf.float32, shape=[None, None, None, 1])
+            if self.feature_extractor == 'wysiwygFe':
+                self.features = WYSIWYGFeatureExtractor(self).createGraph()
+            elif self.feature_extractor == 'alexnetFe':
+                self.features = AlexnetFeatureExtractor(self).createGraph()
+            elif self.feature_extractor == 'vggFe':
+                self.features = VGGFeatureExtractor(self).createGraph()
+            elif self.feature_extractor == 'resnetFe':
+                self.features = ResnetFeatureExtractor(self).createGraph()
+            elif self.feature_extractor == 'densenetFe':
+                self.features =DensenetFeatureExtractor(self).createGraph()
             else:
-                print('e2e must specify an feature extractor!')
+                print(self.feature_extractor + ' is no valid feature extractor!')
                 quit()
-        elif encoder != None and decoder != None:
-            self.groundtruth = tf.placeholder(dtype=tf.int32, shape=[None,max_num_tokens])
-            self.label_gold = self.groundtruth
+        else:
+            self.input = tf.placeholder(dtype=tf.float32, shape=[None, None, None, \
+                self.num_features])
+            self.features = self.input
+        if self.encoder != '' and self.decoder != '' and self.encoder_size != -1 and \
+                self.decoder_size != -1:
+            self.groundtruth = tf.placeholder(dtype=tf.int32, shape=[None, \
+                self.max_num_tokens])
             # define the encoder
-            if encoder == 'simpleEnc':
-                outputs, state = SimpleEncoder.createGraph(self, self.features)
-            elif encoder == 'monorowEnc':
-                outputs, state = MonorowEncoder.createGraph(self, self.features)
-            elif encoder == 'birowEnc':
-                outputs, state = BirowEncoder.createGraph(self, self.features)
-            elif encoder == 'monocolEnc':
-                outputs, state = MonocolEncoder.createGraph(self, self.features)
-            elif encoder == 'bicolEnc':
-                outputs, state = BicolEncoder.createGraph(self, self.features)
-            elif encoder == 'quadroEnc':
-                outputs, state = QuadroEncoder.createGraph(self, self.features)
+            if self.encoder == 'monorowEnc':
+                self.outputs, self.state = MonorowEncoder(self).createGraph()
+            elif self.encoder == 'birowEnc':
+                self.outputs, self.state = BirowEncoder(self).createGraph()
+            elif self.encoder == 'monocolEnc':
+                self.outputs, self.state = MonocolEncoder(self).createGraph()
+            elif self.encoder == 'bicolEnc':
+                self.outputs, self.state = BicolEncoder(self).createGraph()
+            elif self.encoder == 'quadroEnc':
+                self.outputs, self.state = QuadroEncoder(self).createGraph()
             else:
-                print(encoder + ' is no valid encoder type!')
+                print(self.encoder + ' is no valid encoder type!')
                 quit()
             # define the decoder
-            if decoder == 'simpleDec':
-                self.label_prediction = SimpleDecoder(self).createGraph(outputs, state)
-            elif decoder == 'simplegruDec':
-                self.label_prediction = SimplegruDecoder(self).createGraph(outputs, state)
-            elif decoder == 'bahdanauDec':
-                self.label_prediction = BahdanauDecoder(self).createGraph(outputs, state)
-            elif decoder == 'luongDec':
-                self.label_prediction = LuongDecoder(self).createGraph(outputs, state)
+            if self.decoder == 'simpleDec':
+                SimpleDecoder(self).createGraph()
+            elif self.decoder == 'simplegruDec':
+                SimplegruDecoder(self).createGraph()
+            elif self.decoder == 'bahdanauDec':
+                BahdanauDecoder(self).createGraph()
+            elif self.decoder == 'luongDec':
+                LuongDecoder(self).createGraph()
             else:
-                print(decoder + ' is no valid decoder type!')
-                quit()            
-        elif not (encoder == None and decoder == None):
+                print(self.decoder + ' is no valid decoder type!')
+                quit()
+            self.__useLabelLoss()
+        elif self.encoder != '' or self.decoder != '' or self.encoder_size != -1 or \
+                self.decoder_size != -1:
             print('encoder and decoder must be used together!')
             quit()
-        if mode == 'feOnly':
-            print('classification!')
-            self.useClassesLoss()
         else:
-            print('captioning!')
-            self.useLabelLoss()
-        self.createOptimzer()
-        assert self.input != None
-        assert self.loss != None
+            self.prediction = SimpleClassifier(self).createGraph()
+            self.__useClassesLoss()
+        # creates the optimizer
+        self.createOptimizer()
+        #print('model factory')
+        #code.interact(local=dict(globals(), **locals()))
         # create the save path
         self.save_path = self.model_dir + '/weights.ckpt'
         self.seed_path = self.model_dir + '/seeds.ckpt'
@@ -164,23 +180,18 @@ class Model:
                 #print(seed.shape)
             self.save()
             self.saveSeeds()
-        #code.interact(local=dict(globals(), **locals()))
-        tf.summary.histogram('predictionHisto', self.predictionDistribution)
-        tf.summary.scalar('predictionAvg', tf.reduce_mean(self.predictionDistribution))
-        tf.summary.tensor_summary('predictionTensor', self.predictionDistribution)
-        self.summaries = tf.summary.merge_all()
-        self.board_path = self.model_dir + '/tensorboard'
-        self.writer = tf.summary.FileWriter(self.board_path, graph=tf.get_default_graph())
-        self.step = 0
-        self.predictionDistributionsDone = 0
-        param_count_path = self.model_dir + '/param_count.txt'
-        shutil.rmtree(param_count_path, ignore_errors=True)
-        param_count_writer = open(param_count_path, 'w')
-        param_count_writer.write(str(self.countVariables()))
-        param_count_writer.close()
+        #tf.summary.histogram('predictionHisto', self.prediction)
+        #tf.summary.scalar('predictionAvg', tf.reduce_mean(self.prediction))
+        #tf.summary.tensor_summary('predictionTensor', self.prediction)
+        #self.summaries = tf.summary.merge_all()
+        #self.board_path = self.model_dir + '/tensorboard'
+        #self.writer = tf.summary.FileWriter(self.board_path, graph=tf.get_default_graph())
+        # writes the parameter count
+        self.writeParam('param_count', str(self.countVariables()))
 
     def decayLearningRate(self, decay):
         self.learning_rate = self.learning_rate * decay
+        self.writeParam('learning_rate', self.learning_rate)
         self.setOptimizer()
 
     def createOptimizer(self):
@@ -197,94 +208,77 @@ class Model:
             with tf.variable_scope("MyAdadeltaOptimizer", reuse=None):
                 optimizer = tf.train.AdadeltaOptimizer(self.learning_rate)
         params = tf.trainable_variables()
-        gradients = tf.gradients(self.loss, params)
+        gradients = tf.gradients(self.train_loss, params)
         clipped_gradients, _ = tf.clip_by_global_norm(gradients, 2.0) # in [1,5]
         self.update_step = optimizer.apply_gradients(zip(clipped_gradients, params))
-        self.train_op = slim.learning.create_train_op(self.loss, optimizer, \
-            summarize_gradients=True)
 
     # indicates to fit the predicted label to the gold label as objective
-    def useLabelLoss(self):
+    def __useLabelLoss(self):
         try:
+            self.used_loss = 'label'
             with tf.variable_scope("labelLoss", reuse=None):
-                batchsize = tf.shape(self.label_prediction)
-                self.predictionDistribution = tf.nn.softmax(self.label_prediction)
-                self.prediction = tf.argmax(self.predictionDistribution, axis=2)
-                diff = self.max_num_tokens - tf.shape(self.prediction)[1]
-                self.prediction = tf.pad(self.prediction, [[0,0],[0,diff]])
-                #label_prediction = tf.transpose(self.label_prediction, [1,0,2])
-                #label_gold = tf.transpose(self.label_gold, [1,0])
-                #loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label_gold, \
-                #    logits=label_prediction)
-                #self.loss = tf.reduce_mean(loss)
-                self.used_loss = 'label'
-                eos_gt = tf.argmax(self.label_gold, 1)
-                eos_pred = tf.argmax(self.prediction, 1)
+                batchsize = tf.shape(self.train_prediction)
+                self.train_distribution = tf.nn.softmax(self.train_prediction)
+                self.train_pred = tf.argmax(self.train_distribution, axis=2)
+                diff = self.max_num_tokens - tf.shape(self.train_pred)[1]
+                self.prediction_greedy = tf.pad(self.train_pred, [[0,0],[0,diff]])
+                eos_gt = tf.argmax(self.groundtruth, 1)
+                eos_pred = tf.argmax(self.train_pred, 1)
                 max_seq_length = tf.maximum(eos_gt, eos_pred)
-                #code.interact(local=dict(globals(), **locals()))
-                #included = tf.ones([batchsize,max_seq_length])
-                #excluded = tf.zeros([batchsize,self.max_num_tokens - max_seq_length])
-                #weights = tf.concat([included,excluded],1)
                 weights = tf.sequence_mask(max_seq_length, self.max_num_tokens)
                 weights = tf.cast(weights, tf.float32)
-                self.loss = tf.contrib.seq2seq.sequence_loss(self.label_prediction,\
-                    self.label_gold, weights)
+                self.train_loss = tf.contrib.seq2seq.sequence_loss(self.train_prediction,\
+                    self.groundtruth, weights)
+                self.infer_distribution = tf.nn.softmax(self.infer_prediction)
+                self.infer_pred = tf.argmax(self.infer_distribution, axis=2)
+                diff = self.max_num_tokens - tf.shape(self.infer_pred)[1]
+                self.prediction_greedy = tf.pad(self.infer_pred, [[0,0],[0,diff]])
+                eos_gt = tf.argmax(self.groundtruth, 1)
+                eos_pred = tf.argmax(self.infer_pred, 1)
+                max_seq_length = tf.maximum(eos_gt, eos_pred)
+                weights = tf.sequence_mask(max_seq_length, self.max_num_tokens)
+                weights = tf.cast(weights, tf.float32)
+                self.infer_loss = tf.contrib.seq2seq.sequence_loss(self.infer_prediction,\
+                    self.groundtruth, weights)
         except Exception:
             print('exception in label loss')
             print(sys.exc_info())
             code.interact(local=dict(globals(), **locals()))
 
     # indicates to fit the predicted classes to the gold classes as objective
-    def useClassesLoss(self):
+    def __useClassesLoss(self):
+        self.used_loss = 'classes'
         with tf.variable_scope("classesLoss", reuse=None):
-            #self.groundtruth = self.classes_gold            
-            loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.classes_gold, \
-                logits=self.classes_prediction)
+            loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.groundtruth, \
+                logits=self.prediction)
             self.loss = tf.reduce_mean(loss)
-            self.classes_prediction = tf.sigmoid(self.classes_prediction)
-            self.predictionDistribution = self.classes_prediction
+            self.prediction = tf.sigmoid(self.prediction)
+            self.predictionDistribution = self.prediction
             self.prediction = tf.round(self.predictionDistribution)
-            self.used_loss = 'classes'
 
     def trainStep(self, inp, groundtruth):
         feed_dict={self.input: inp, self.groundtruth: groundtruth, self.is_training:True, \
             self.keep_prob:0.5}
-        if self.step % (self.save_freq / 10) == 0:
-            _,lossValue,summs,dis,pred, train_prediction, infer_prediction = \
-                self.session.run([self.update_step, self.loss, self.summaries, \
-                self.predictionDistribution, self.prediction, self.train_prediction, \
-                self.infer_prediction], feed_dict=feed_dict)
-            self.writer.add_summary(summs, global_step=self.step)
-            self.writeInLogfile(pred, dis, groundtruth)
+        _,self.current_train_loss, self.current_infer_loss, self.current_train_prediction, \
+            self.current_infer_prediction = self.session.run([\
+            self.update_step, self.train_loss, self.infer_loss, self.train_prediction, \
+            self.infer_prediction], feed_dict=feed_dict)
+        if self.current_step % 100 == 0:
             print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
-            print('global step: ' + str(self.step))
+            print('global step: ' + str(self.current_step))
             print('Current Weights:')
             self.printTrainableVariables()
             print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
-            if self.step % self.save_freq == 0:
+            if self.current_step % 1000 == 0:
                 self.save()
-        else:
-            _,lossValue, pred, train_prediction, infer_prediction = self.session.run([\
-                self.update_step, self.loss, self.prediction, self.train_prediction, \
-                self.infer_prediction], feed_dict=feed_dict)
-        self.step = self.step + 1
         self.current_train_accuracy = self.calculateAccuracy( \
-            self.argmaxs(train_prediction), groundtruth)
-        infer_prediction = self.argmaxs(infer_prediction)
+            self.__argmaxs(self.current_train_prediction), groundtruth)
+        infer_prediction = self.__argmaxs(self.current_infer_prediction)
         infer_prediction = self.fillWithEndTokens(infer_prediction)
         infer_prediction = infer_prediction.astype(int)
         self.current_infer_accuracy = self.calculateAccuracy( \
             infer_prediction, groundtruth)
-        #print("in train step")
-        #code.interact(local=dict(globals(), **locals()))
-        return lossValue, self.calculateAccuracy(pred, groundtruth), pred
-
-    def argmaxs(self, distribution):
-        argmaxss = np.zeros([distribution.shape[0],distribution.shape[1]])
-        for i in range(distribution.shape[0]):
-            for j in range(distribution.shape[1]):
-                argmaxss[i][j] = np.argmax(distribution[i][j])
-        return argmaxss
+        self.current_step  = self.current_step + 1
 
     def valStep(self, inp, groundtruth):
         try:
@@ -296,8 +290,8 @@ class Model:
                 self.session.run([self.train_prediction, self.infer_prediction, self.loss,\
                 self.predictionDistribution, self.prediction], feed_dict=feed_dict)
             self.current_train_accuracy = self.calculateAccuracy( \
-                self.argmaxs(train_prediction), groundtruth)
-            infer_prediction = self.argmaxs(infer_prediction)
+                self.__argmaxs(train_prediction), groundtruth)
+            infer_prediction = self.__argmaxs(infer_prediction)
             infer_prediction = self.fillWithEndTokens(infer_prediction)
             infer_prediction = infer_prediction.astype(int)
             self.current_infer_accuracy = self.calculateAccuracy( \
@@ -318,6 +312,13 @@ class Model:
                 else:
                     prediction_filled[batch][token] = prediction[batch][token]
         return prediction_filled
+
+    def __argmaxs(self, distribution):
+        __argmaxss = np.zeros([distribution.shape[0],distribution.shape[1]])
+        for i in range(distribution.shape[0]):
+            for j in range(distribution.shape[1]):
+                __argmaxss[i][j] = np.argmax(distribution[i][j])
+        return __argmaxss
 
     def predict(self, inp, gt):
         feed_dict={self.input: inp,  self.is_training:False, self.keep_prob:1.0,
@@ -449,7 +450,7 @@ class Model:
         return np.sum([np.prod(v.get_shape().as_list()) \
             for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)])
 
-    def __init__(self,  model_dir, num_classes=None, max_num_tokens=None, \
+    def __init2__(self,  model_dir, num_classes=None, max_num_tokens=None, \
             vocabulary=[], capacity=None, learning_rate=None, \
             train_mode=None, loaded=False, session=None, num_features=None, nr_epochs=1000):
         old = False
@@ -588,7 +589,7 @@ class Model:
         else:
             self.session = session
         # create the network graph depending on train modes
-        self.classes_prediction = tf.constant(-1)
+        self.prediction = tf.constant(-1)
         self.classes_gold = None
         self.save_freq = 1000
         self.keep_prob = tf.placeholder(tf.float32)
@@ -621,16 +622,16 @@ class Model:
             self.groundtruth = tf.placeholder(dtype=tf.float32, shape=[None,num_classes])
             self.classes_gold = self.groundtruth
             if ts[0] == 'wysiwygFe':
-                self.classes_prediction = WYSIWYGClassifier.createGraph(self, self.features)
+                self.prediction = WYSIWYGClassifier.createGraph(self, self.features)
             elif ts[0] == 'alexnetFe':
-                self.classes_prediction = AlexnetClassifier.createGraph(self, self.features)
+                self.prediction = AlexnetClassifier.createGraph(self, self.features)
             elif ts[0] == 'vggFe':
-                self.classes_prediction = VGGClassifier.createGraph(self, self.features)
+                self.prediction = VGGClassifier.createGraph(self, self.features)
             elif ts[0] == 'resnetFe':
-                self.classes_prediction = ResnetClassifier.createGraph(self, \
+                self.prediction = ResnetClassifier.createGraph(self, \
                     self.features)
             elif ts[0] == 'densenetFe':
-                self.classes_prediction = DensenetClassifier.createGraph(self, self.features)
+                self.prediction = DensenetClassifier.createGraph(self, self.features)
             else:
                 print('e2e must specify an feature extractor!')
                 quit()
@@ -658,13 +659,13 @@ class Model:
                 quit()
             # define the decoder
             if ts[2] == 'simpleDec':
-                self.label_prediction = SimpleDecoder(self).createGraph(outputs, state)
+                self.prediction = SimpleDecoder(self).createGraph(outputs, state)
             elif ts[2] == 'simplegruDec':
-                self.label_prediction = SimplegruDecoder(self).createGraph(outputs, state)
+                self.prediction = SimplegruDecoder(self).createGraph(outputs, state)
             elif ts[2] == 'bahdanauDec':
-                self.label_prediction = BahdanauDecoder(self).createGraph(outputs, state)
+                self.prediction = BahdanauDecoder(self).createGraph(outputs, state)
             elif ts[2] == 'luongDec':
-                self.label_prediction = LuongDecoder(self).createGraph(outputs, state)
+                self.prediction = LuongDecoder(self).createGraph(outputs, state)
             else:
                 print(ts[2] + ' is no valid decoder type!')
                 quit()
@@ -742,6 +743,40 @@ class Model:
             #code.interact(local=dict(globals(), **locals()))
             self.train_op = slim.learning.create_train_op(self.loss, optimizer, \
                 summarize_gradients=True)
+
+    # indicates to fit the predicted label to the gold label as objective
+    def useLabelLoss(self):
+        try:
+            with tf.variable_scope("labelLoss", reuse=None):
+                batchsize = tf.shape(self.prediction)
+                self.predictionDistribution = tf.nn.softmax(self.prediction)
+                self.prediction = tf.argmax(self.predictionDistribution, axis=2)
+                diff = self.max_num_tokens - tf.shape(self.prediction)[1]
+                self.prediction = tf.pad(self.prediction, [[0,0],[0,diff]])
+                self.used_loss = 'label'
+                eos_gt = tf.argmax(self.groundtruth, 1)
+                eos_pred = tf.argmax(self.prediction, 1)
+                max_seq_length = tf.maximum(eos_gt, eos_pred)
+                weights = tf.sequence_mask(max_seq_length, self.max_num_tokens)
+                weights = tf.cast(weights, tf.float32)
+                self.loss = tf.contrib.seq2seq.sequence_loss(self.prediction,\
+                    self.groundtruth, weights)
+        except Exception:
+            print('exception in label loss')
+            print(sys.exc_info())
+            code.interact(local=dict(globals(), **locals()))
+
+    # indicates to fit the predicted classes to the gold classes as objective
+    def useClassesLoss(self):
+        with tf.variable_scope("classesLoss", reuse=None):
+            #self.groundtruth = self.classes_gold            
+            loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.groundtruth, \
+                logits=self.prediction)
+            self.loss = tf.reduce_mean(loss)
+            self.prediction = tf.sigmoid(self.prediction)
+            self.predictionDistribution = self.prediction
+            self.prediction = tf.round(self.predictionDistribution)
+            self.used_loss = 'classes'
 
 def load(model_dir, train_mode=None, max_num_tokens=None, learning_rate=None, capacity=None, \
         num_classes=None, combine_models=False, fe_dir=None, \

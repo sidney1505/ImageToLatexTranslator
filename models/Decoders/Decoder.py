@@ -6,21 +6,20 @@ class Decoder():
     def __init__(self, model):
         self.model = model
 
-    def createGraph(self, features, state):
-        statesize = state[0].shape[-1].value # * 2
-        c = state[0] # tf.concat([state[0],state[0]],1)
-        h = state[1] # tf.concat([state[1],state[1]],1)
+    def createGraph(self):
+        self.statesize = self.model.state[0].shape[-1].value # * 2
+        c = self.model.state[0] # tf.concat([state[0],state[0]],1)
+        h = self.model.state[1] # tf.concat([state[1],state[1]],1)
         state = tf.contrib.rnn.LSTMStateTuple(c,h)
-        batchsize = tf.shape(features)[0]
-        self.model.decoder = "simpleDecoder"
+        batchsize = tf.shape(self.model.features)[0]
         with tf.variable_scope(self.model.decoder, reuse=None):
-            decodercell = self.createDecoderCell(statesize, features)
+            decodercell = self.createDecoderCell()
             initial_state = state
             GO_SYMBOL = -1
             END_SYMBOL = self.model.num_classes
             start_tokens=tf.tile([GO_SYMBOL], [batchsize])
             start_tokens2D = tf.expand_dims(start_tokens, 1)
-            decoder_input = tf.concat([start_tokens2D, self.model.label_gold], 1)
+            decoder_input = tf.concat([start_tokens2D, self.model.groundtruth], 1)
             label_gold = tf.one_hot(decoder_input, self.model.num_classes)
             def embedding(x):
                 return tf.one_hot(x, self.model.num_classes)
@@ -42,8 +41,6 @@ class Decoder():
                 maximum_iterations=self.model.max_num_tokens)
             self.model.train_prediction = train_final_outputs[0]
             self.model.infer_prediction = infer_final_outputs[0]
-        return tf.cond(self.model.is_training, lambda:self.model.train_prediction, \
-            lambda:self.model.infer_prediction)
 
-    def createDecoderCell(self, statesize, features):
+    def createDecoderCell(self):
         raise NotImplementedError

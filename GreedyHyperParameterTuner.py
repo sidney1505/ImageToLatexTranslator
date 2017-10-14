@@ -1,16 +1,18 @@
+import sys, os, code
 import Trainer
+import tensorflow as tf
 
 class GreedyHyperparamterTuner:
     def __init__(self):
         self.modes=['e2e','stepbystep']
         self.feature_extractors=['alexnetFe','wysiwysgFe','vggFe','resnetFe','densenetFe']
-        self.encoders=['simpleEnc','monorowEnc','birowEnc','monocolEnc','bicolEnc','quadroEnc']
+        self.encoders=['monorowEnc','birowEnc','monocolEnc','bicolEnc','quadroEnc']
         self.decoders=['simpleDec','simplegruDec','bahdanauDec','luongDec']
         self.encoder_sizes=[512,1024,2048,4096]
         self.decoder_sizes=[512,1024,2048,4096]
         self.optimizers=['vanillaSGD','momentum','adam','adadelta']
 
-    def findBestConfiguration():
+    def findBestConfiguration(self):
         self.current_mode=0
         self.current_feature_extractor=0
         self.current_encoder=0
@@ -120,12 +122,27 @@ class GreedyHyperparamterTuner:
                 self.current_optimizer = optimizer
 
 def main(args):
-    trainer = Trainer.Trainer(os.environ['BASE_MODEL_DIR'], os.environ['DATA_DIR'],\
-        os.environ['TMP_DIR'])
-    ght = GreedyHyperparamterTuner()
-    code.interact(local=dict(globals(), **locals()))
-    ght.findBestConfiguration()
+    print('enter main method')
+    try:
+        trainer = Trainer.Trainer(os.environ['BASE_MODEL_DIR'], os.environ['DATA_DIR'],\
+            os.environ['TMP_DIR'], 1000000)
+        ght = GreedyHyperparamterTuner()
+        sess = tf.Session()
+        print('greedy hyper parameter main')
+        code.interact(local=dict(globals(), **locals()))
+        trainer.trainModel()
+        #ght.findBestConfiguration()
+    except:
+        '''print('something went wrong!')
+        print(sys.exc_info())
+        code.interact(local=dict(globals(), **locals()))'''
 
 if __name__ == '__main__':
     main(sys.argv[1:])
-    logging.info('Jobs finished')
+
+'''
+execfile('GreedyHyperParameterTuner.py')
+trainer.trainModel()
+print('current problem')
+code.interact(local=dict(globals(), **locals()))
+'''
