@@ -121,6 +121,7 @@ class GreedyHyperparamterTuner:
                 best_accuracy = current_accuracy
                 self.current_optimizer = optimizer
 
+
 def main(args):
     print('enter main method')
     try:

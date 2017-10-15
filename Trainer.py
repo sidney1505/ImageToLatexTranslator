@@ -1,4 +1,5 @@
 import sys, os, argparse, logging, time
+import matplotlib.pyplot as plt
 import numpy as np
 import code
 import shutil
@@ -52,14 +53,14 @@ class Trainer:
                 self.capacity)
             self.train()
         elif self.mode == 'stepbystep':
-            self.model = Model(self.model_dir, self.feature_extractor, self.optimizer, \
-                self.initial_learning_rate)
+            self.model = Model(self.model_dir, self.feature_extractor, optimizer= \
+                self.optimizer, learning_rate=self.initial_learning_rate)
             self.train()
             self.processData()
             fe_dir = self.model.model_dir
-            self.model = Model(self.model_dir, self.encoder, self.decoder, \
-                self.encoder_size, self.decoder_size, self.optimizer, \
-                self.initial_learning_rate)
+            self.model = Model(self.model_dir, encoder=self.encoder, decoder=self.decoder, \
+                encoder_size=self.encoder_size, decoder_size=self.decoder_size, \
+                optimizer=self.optimizer, learning_rate=self.initial_learning_rate)
             self.train()
             ed_dir = self.model.model_dir
             self.model = self.combineModels(fe_dir, ed_dir)
@@ -71,8 +72,10 @@ class Trainer:
         val_last_loss = float('inf')
         while True:
             begin = time.time()
-            train_loss, train_accuracy = self.__iterateOneEpoch('train')
-            val_loss, val_accuracy = self.__iterateOneEpoch('val')
+            train_loss, train_accuracy, infer_loss, infer_accuracy = \
+                self.__iterateOneEpoch('train')
+            val_loss, val_accuracy, val_infer_loss, val_infer_accuracy = \
+                self.__iterateOneEpoch('val')
             # updates the implicit parameters of the model
             self.model.current_epoch = self.model.current_epoch + 1
             self.model.writeParam('current_epoch',self.model.current_epoch)
@@ -94,9 +97,175 @@ class Trainer:
                 code.interact(local=dict(globals(), **locals()))
                 break
 
-    def loadModel(model_dir=None, feature_extractor='', \
+    def __iterateOneEpoch(self, phase):
+        if self.model.used_loss == 'classes':
+            false2false = np.zeros(self.model.num_classes)
+            false2true = np.zeros(self.model.num_classes)
+            true2true = np.zeros(self.model.num_classes)
+            true2false = np.zeros(self.model.num_classes)
+        batch_it = 0
+        batch_images, minibatchsize, batch_it, \
+            batch_labels, new_iteration, batch_classes_true, batch_imgnames = \
+            self.__loadBatch(phase, batch_it)
+        num_samples = 0
+        samples_correct = 0
+        tokens_correct = 0
+        num_tokens = 0
+        lines = ''
+        train_losses = []
+        train_accuracies = []
+        infer_losses = []
+        infer_accuracies = []
+        while not new_iteration: # randomise!!!
+            print(batch_it)
+            batch_predictions = []
+            for minibatch_it in range(batch_images.shape[0] \
+                    / minibatchsize):
+                # create the minibatches
+                minibatch_images = self.__createMinibatch(batch_images, \
+                    minibatch_it, minibatchsize)
+                minibatch_labels = self.__createMinibatch(batch_labels, \
+                    minibatch_it, minibatchsize)
+                minibatch_imgnames = self.__createMinibatch(batch_imgnames, \
+                    minibatch_it, minibatchsize)
+                #
+                #code.interact(local=dict(globals(), **locals()))
+                if phase == 'train':
+                    self.model.trainStep(minibatch_images, minibatch_labels)
+                else:
+                    self.model.valStep(minibatch_images, minibatch_labels)
+
+                print(phase + 'minibatch(' + str(self.model.current_epoch) + ',' + \
+                    str(batch_it - 1) + ',' + str(minibatch_it*minibatchsize)+')[' + \
+                    str(self.model.current_step) + '] : '+ str(minibatch_images.shape) + \
+                    ' : ' + str(minibatch_labels.shape))
+                print(self.model.model_dir)
+                train_losses.append(self.model.current_train_loss)
+                train_accuracies.append(self.model.current_train_accuracy)
+                print(str(self.model.current_train_loss) + ' : ' + \
+                    str(np.mean(train_losses)) + ' : ' + \
+                    str(self.model.current_train_accuracy) + ' : ' + \
+                    str(np.mean(train_accuracies)))
+                infer_losses.append(self.model.current_infer_loss)
+                infer_accuracies.append(self.model.current_infer_accuracy)
+                print(str(self.model.current_infer_loss) + ' : ' + \
+                    str(np.mean(infer_losses)) + ' : ' + \
+                    str(self.model.current_infer_accuracy) + ' : ' + \
+                    str(np.mean(infer_accuracies)))
+
+                if phase != 'train':
+                    label_pred = ''
+                    label_gold = ''
+                    for batch in range(minibatch_labels.shape[0]):
+                        num_samples = num_samples + 1
+                        all_were_correct = 1
+                        for token in range(minibatch_labels.shape[1]):
+                            if self.model.current_infer_prediction[batch][token] == \
+                                    self.model.num_classes - 1 and \
+                                    minibatch_labels[batch][token] == \
+                                    self.model.num_classes - 1:
+                                break
+                            num_tokens = num_tokens + 1
+                            if self.model.current_infer_prediction[batch][token] != \
+                                    minibatch_labels[batch][token]:
+                                all_were_correct = 0
+                            else:
+                                tokens_correct = tokens_correct + 1
+                        samples_correct = samples_correct + all_were_correct
+                        if self.model.used_loss == 'label':
+                            line = minibatch_imgnames[batch] + '\t'
+                            label_pred = ''
+                            label_gold = ''
+                            for token in range(minibatch_labels.shape[1]):
+                                if self.model.num_classes - 1 == \
+                                        self.model.current_infer_prediction[batch][token]:
+                                    break
+                                label_pred = label_pred + self.model.vocabulary[ \
+                                    self.model.current_infer_prediction[batch][token]] + ' '
+                                #code.interact(local=dict(globals(), **locals()))
+                            for token in range(minibatch_labels.shape[1]):
+                                if self.model.num_classes - 1 == \
+                                        int(minibatch_labels[batch][token]):
+                                    break
+                                label_gold = label_gold + self.model.vocabulary[ \
+                                    int(minibatch_labels[batch][token])] + ' '                        
+                            line = line + label_gold[:-1] + '\t' + label_pred[:-1] + '\t' + \
+                                '-1' + '\t' + '-1' + '\n'
+                            lines = lines + line
+                        else:
+                            for token in range(minibatch_labels.shape[1]):
+                                if minibatch_labels[batch][token] == 0 and \
+                                        minibatch_predictions[batch][token] == 0:
+                                    false2false[token] = false2false[token] + 1
+                                elif minibatch_labels[batch][token] == 0 and \
+                                        minibatch_predictions[batch][token] == 1:
+                                    false2true[token] = false2true[token] + 1
+                                elif minibatch_labels[batch][token] == 1 and \
+                                        minibatch_predictions[batch][token] == 1:
+                                    true2true[token] = true2true[token] + 1
+                                elif minibatch_labels[batch][token] == 1 and \
+                                        minibatch_predictions[batch][token] == 0:
+                                    true2false[token] = true2false[token] + 1
+                                else:
+                                    print('error!!!')
+                                    code.interact(local=dict(globals(), **locals()))
+                    print('')
+                    print(label_gold)
+                    print('')
+                    print(label_pred)
+                    print('')
+            else:
+                self.model.writeParamInList('train/losses_' + 
+                    str(self.model.current_epoch), str(np.mean(train_losses)))
+                self.model.writeParamInList('train/accuracies_' + 
+                    str(self.model.current_epoch), str(np.mean(train_accuracies)))
+                self.model.writeParamInList('train/infer_losses_' + \
+                    str(self.model.current_epoch), str(np.mean(infer_losses)))
+                self.model.writeParamInList('train/infer_accuracies_' + \
+                    str(self.model.current_epoch), str(np.mean(infer_accuracies)))
+            batch_images, minibatchsize, batch_it, \
+                batch_labels, new_iteration, batch_classes_true, \
+                batch_imgnames = self.__loadBatch(phase, batch_it)
+        if phase != 'train':
+            self.model.writeParam(phase + 'results/epoch' + \
+                str(self.model.current_epoch), lines)
+            absolute_acc = float(samples_correct) / float(num_samples)
+            self.model.writeParam(phase + 'absolute_accuracy/epoch' + \
+                str(self.model.current_epoch), str(absolute_acc))
+            token_acc = float(tokens_correct) / float(num_tokens)
+            self.model.writeParam(phase + 'token_accuracy/epoch' + \
+                str(self.model.current_epoch), str(absolute_acc))
+            print('abs: ' + str(absolute_acc) + ', tok: ' + str(token_acc))
+            if self.model.used_loss == 'classes':
+                with open(self.model.model_dir + '/confusion.npz', 'w') as fout:
+                    np.savez(fout,false2false=false2false,false2true=false2true, \
+                        true2true=true2true,true2false=true2false)
+                stats = {}
+                for c in range(self.model.num_classes):
+                    num_right = float(false2false[c] + true2true[c])
+                    num = float(false2false[c] + true2true[c] + false2true[c] + true2false[c])
+                    n = true2true[c] + true2false[c]
+                    class_accuracy = num_right / num
+                    f2f = false2false[c] / num
+                    t2t = true2true[c] / num
+                    f2t = false2true[c] / num
+                    t2f = true2false[c] / num
+                    stats.update({(class_accuracy,c):(self.model.vocabulary[c], str(f2f), \
+                        str(t2t), str(f2t), str(t2f), str(num))})
+                keys = sorted(stats.keys())
+                s = ''
+                for key in keys:
+                    c, f2f, t2t, f2t, t2f, n = stats[key]
+                    s = s +'\"'+c+'\" : '+str(key[0])+' : ('+f2f+','+t2t+','+f2t+','+ \
+                        t2f+') : ' + n + '\n'
+                self.model.writeParam(phase + 'stats/epoch' + \
+                    str(self.model.current_epoch), absolute_acc)
+        return np.mean(train_losses), np.mean(train_accuracies), \
+            np.mean(infer_losses), np.mean(infer_accuracies)
+
+    def loadModel(self, model_dir=None, feature_extractor='', \
             encoder='', decoder='', encoder_size='', decoder_size='',
-            optimizer='', max_num_tokens=None):
+            optimizer='', max_num_tokens=150):
         print('#############################################################')
         print('#############################################################')
         print('#############################################################')
@@ -104,15 +273,12 @@ class Trainer:
         print('#############################################################')
         print('#############################################################')
         print('#############################################################')
-        session = tf.Session()
         if model_dir == None:
             model_dir = self.findBestModel(feature_extractor, encoder, decoder,\
                 encoder_size, decoder_size, optimizer)
-        self.model = Model(model_dir, max_num_tokens=max_num_tokens, loaded=True, \
-            session=session)   
+        self.model = Model(model_dir, max_num_tokens=max_num_tokens, loaded=True)
         print('load variables!')
-        saver = tf.train.Saver()
-        saver.restore(session, model_dir + '/weights.ckpt')
+        self.model.restoreLastCheckpoint()
         print('#############################################################')
         print('#############################################################')
         print('#############################################################')
@@ -222,8 +388,8 @@ class Trainer:
         assert batchnames != [], phase + " batch directory musn't be empty!"
         return batchnames
 
-    def __findBestModel(self, feature_extractor='', encoder='', decoder='', encoder_size='', \
-            decoder_size='', optimizer=''):
+    def __findBestModel(self, feature_extractor='', encoder='', decoder='', \
+            encoder_size='', decoder_size='', optimizer=''):
         path = self.tmp_dir + '/' + feature_extractor + '_' + encoder + '_' + decoder \
              + '_' + str(encoder_size) + '_' + str(decoder_size) + '_' + optimizer
         if not os.path.exists(path):
@@ -267,155 +433,17 @@ class Trainer:
         return batch_images, minibatchsize, batch_it, batch_labels, new_iteration, \
             classes_true, batch_imgnames
 
-    def __iterateOneEpoch(self, phase):
-        if self.model.used_loss == 'classes':
-            false2false = np.zeros(self.model.num_classes)
-            false2true = np.zeros(self.model.num_classes)
-            true2true = np.zeros(self.model.num_classes)
-            true2false = np.zeros(self.model.num_classes)
-        batch_it = 0
-        batch_images, minibatchsize, batch_it, \
-            batch_labels, new_iteration, batch_classes_true, batch_imgnames = \
-            self.__loadBatch(phase, batch_it)
-        num_samples = 0
-        samples_correct = 0
-        tokens_correct = 0
-        num_tokens = 0
-        lines = ''
+    def drawLossGraph(self, epoch):
+        train_loss_strings = self.model.readParamList('train/losses_' + str(epoch))
         train_losses = []
-        train_accuracies = []
+        infer_loss_strings = self.model.readParamList('train/infer_losses_' + str(epoch))
         infer_losses = []
-        infer_accuracies = []
-        while not new_iteration: # randomise!!!
-            print(batch_it)
-            batch_predictions = []
-            for minibatch_it in range(batch_images.shape[0] \
-                    / minibatchsize):
-                # create the minibatches
-                minibatch_images = self.__createMinibatch(batch_images, \
-                    minibatch_it, minibatchsize)
-                minibatch_labels = self.__createMinibatch(batch_labels, \
-                    minibatch_it, minibatchsize)
-                minibatch_imgnames = self.__createMinibatch(batch_imgnames, \
-                    minibatch_it, minibatchsize)
-                #
-                #code.interact(local=dict(globals(), **locals()))
-                if phase == 'train':
-                    self.model.trainStep(minibatch_images, minibatch_labels)
-                else:
-                    self.model.valStep(minibatch_images, minibatch_labels)
-
-                print(phase + 'minibatch(' + str(self.model.current_epoch) + ',' + \
-                    str(batch_it) + ',' + str(minibatch_it*minibatchsize)+') : '+\
-                    str(minibatch_images.shape) + ' : ' + \
-                    str(minibatch_labels.shape))
-                print(self.model.model_dir)
-                train_losses.append(self.model.current_train_loss)
-                train_accuracies.append(self.model.current_train_accuracy)
-                print(str(self.model.current_train_loss) + ' : ' + \
-                    str(np.mean(train_losses)) + ' : ' + \
-                    str(self.model.current_train_accuracy) + ' : ' + \
-                    str(np.mean(train_accuracies)))
-                infer_losses.append(self.model.current_infer_loss)
-                infer_accuracies.append(self.model.current_infer_accuracy)
-                print(str(self.model.current_infer_loss) + ' : ' + \
-                    str(np.mean(infer_losses)) + ' : ' + \
-                    str(self.model.current_infer_accuracy) + ' : ' + \
-                    str(np.mean(infer_accuracies)))
-
-                if phase != 'train':
-                    for batch in range(minibatch_labels.shape[0]):
-                        num_samples = num_samples + 1
-                        all_were_correct = 1
-                        for token in range(minibatch_labels.shape[1]):
-                            num_tokens = num_tokens + 1
-                            if minibatch_predictions[batch][token] != \
-                                    minibatch_labels[batch][token]:
-                                all_were_correct = 0
-                            else:
-                                tokens_correct = tokens_correct + 1
-                        samples_correct = samples_correct + all_were_correct
-                        if self.model.used_loss == 'label':
-                            line = minibatch_imgnames[batch] + '\t'
-                            label_pred = ''
-                            label_gold = ''
-                            for token in range(minibatch_labels.shape[1]):
-                                if len(self.model.vocabulary) == \
-                                        minibatch_predictions[batch][token]+1:
-                                    break
-                                label_pred = label_pred + self.model.vocabulary[ \
-                                    minibatch_predictions[batch][token]] + ' '
-                                #code.interact(local=dict(globals(), **locals()))
-                            for token in range(minibatch_labels.shape[1]):
-                                if len(self.model.vocabulary)== \
-                                    int(minibatch_labels[batch][token])+1:
-                                    break
-                                label_gold = label_gold + self.model.vocabulary[ \
-                                    int(minibatch_labels[batch][token])] + ' '                        
-                            line = line + label_gold[:-1] + '\t' + label_pred[:-1] + '\t' + \
-                                '-1' + '\t' + '-1' + '\n'
-                            print(self.model.train_mode)
-                            print(label_gold[:-1])
-                            print('')
-                            print(label_pred[:-1])
-                            print('')
-                            print(str(samples_correct) + ' / ' + str(num_samples))
-                            lines = lines + line
-                        else:
-                            for token in range(minibatch_labels.shape[1]):
-                                if minibatch_labels[batch][token] == 0 and \
-                                        minibatch_predictions[batch][token] == 0:
-                                    false2false[token] = false2false[token] + 1
-                                elif minibatch_labels[batch][token] == 0 and \
-                                        minibatch_predictions[batch][token] == 1:
-                                    false2true[token] = false2true[token] + 1
-                                elif minibatch_labels[batch][token] == 1 and \
-                                        minibatch_predictions[batch][token] == 1:
-                                    true2true[token] = true2true[token] + 1
-                                elif minibatch_labels[batch][token] == 1 and \
-                                        minibatch_predictions[batch][token] == 0:
-                                    true2false[token] = true2false[token] + 1
-                                else:
-                                    print('error!!!')
-                                    code.interact(local=dict(globals(), **locals()))
-            batch_images, minibatchsize, batch_it, \
-                batch_labels, new_iteration, batch_classes_true, \
-                batch_imgnames = self.__loadBatch(phase, batch_it)
-        if phase != train:
-            self.model.writeParam(phase + '/results/epoch' + \
-                str(self.model.current_epoch), lines)
-            absolute_acc = float(samples_correct) / float(num_samples)
-            self.model.writeParam(phase + '/absolute_accuracy/epoch' + \
-                str(self.model.current_epoch), absolute_acc)
-            token_acc = float(tokens_correct) / float(num_tokens)
-            self.model.writeParam(phase + '/token_accuracy/epoch' + \
-                str(self.model.current_epoch), absolute_acc)
-            print('abs: ' + str(absolute_acc) + ', tok: ' + str(token_acc))
-            if self.model.used_loss == 'classes':
-                with open(self.model.model_dir + '/confusion.npz', 'w') as fout:
-                    np.savez(fout,false2false=false2false,false2true=false2true, \
-                        true2true=true2true,true2false=true2false)
-                stats = {}
-                for c in range(self.model.num_classes):
-                    num_right = float(false2false[c] + true2true[c])
-                    num = float(false2false[c] + true2true[c] + false2true[c] + true2false[c])
-                    n = true2true[c] + true2false[c]
-                    class_accuracy = num_right / num
-                    f2f = false2false[c] / num
-                    t2t = true2true[c] / num
-                    f2t = false2true[c] / num
-                    t2f = true2false[c] / num
-                    stats.update({(class_accuracy,c):(self.model.vocabulary[c], str(f2f), \
-                        str(t2t), str(f2t), str(t2f), str(num))})
-                keys = sorted(stats.keys())
-                s = ''
-                for key in keys:
-                    c, f2f, t2t, f2t, t2f, n = stats[key]
-                    s = s +'\"'+c+'\" : '+str(key[0])+' : ('+f2f+','+t2t+','+f2t+','+ \
-                        t2f+') : ' + n + '\n'
-                self.model.writeParam(phase + '/stats/epoch' + \
-                    str(self.model.current_epoch), absolute_acc)
-        return np.mean(batch_losses), np.mean(batch_accuracies)
+        for i in range(len(train_loss_strings)):
+            trainlosses.append(float(train_loss_strings[i]))
+            inferlosses.append(float(infer_loss_strings[i]))
+        plt.plot(range(1,len(train_losses) + 1), train_losses, color='blue')
+        plt.plot(range(1,len(infer_losses) + 1), infer_losses, color='red')
+        plt.show()
 
     def __calculateMinibatchsize(self, image):
         minibatchsize = 20

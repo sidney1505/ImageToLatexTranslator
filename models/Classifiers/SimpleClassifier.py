@@ -1,5 +1,6 @@
 import code
 import tensorflow as tf
+import tflearn
 from Classifier import Classifier
 
 class SimpleClassifier(Classifier):

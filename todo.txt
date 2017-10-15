@@ -1,0 +1,12 @@
+-> geladene modelle wieder trainierbar machen
+-> stepbystep training fixen
+--> abspeichern/einspeichern an jedem ablaufschritt ermöglichen
+--> klassifikation wieder ausführbar machen
+--> preprocessing der daten validieren
+--> zusammführung und finetuning ermöglichen
+-> greedyhyperparametertuner sinnvoll ausführbar machen
+--> abspeichern und laden bester modelle bei gegebener hyperparameter-konfiguration validieren
+--> abspeichern/fortführung an jedem punkt der greedy search ermöglichen
+-> inferenzhelper sinnvoll einsetzen
+--> BeamSearchDecoder zum laufen bringen
+--> absolute accuracies zum validieren vergleichen!
