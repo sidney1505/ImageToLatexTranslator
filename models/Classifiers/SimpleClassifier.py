@@ -14,7 +14,8 @@ class SimpleClassifier(Classifier):
                 w1 = tf.get_variable('weight', [features.shape[1],4096], tf.float32, \
                     tf.random_normal_initializer())
                 features = tf.tensordot(features,w1,[[1],[0]])
-                b1 = tf.get_variable('bias', [4096], tf.float32, tf.random_normal_initializer())
+                b1 = tf.get_variable('bias', [4096], tf.float32, \
+                    tf.random_normal_initializer())
                 features = features + b1
                 features = tf.nn.relu(features)
                 features = tf.nn.dropout(features,self.model.keep_prob)
@@ -23,7 +24,8 @@ class SimpleClassifier(Classifier):
                 w1 = tf.get_variable('weight', [4096,4096],tf.float32, \
                     tf.random_normal_initializer())
                 features = tf.tensordot(features,w1,[[1],[0]])
-                b1 = tf.get_variable('bias', [4096], tf.float32, tf.random_normal_initializer())
+                b1 = tf.get_variable('bias', [4096], tf.float32, \
+                    tf.random_normal_initializer())
                 features = features + b1
                 features = tf.nn.relu(features)
                 features = tf.nn.dropout(features,self.model.keep_prob)
@@ -36,4 +38,4 @@ class SimpleClassifier(Classifier):
                     tf.random_normal_initializer())
                 features = features + b1
 
-        return features
+        self.model.prediction = features

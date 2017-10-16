@@ -50,7 +50,7 @@ class Model:
             # implicit parameters
             self.current_epoch = int(self.readParam('current_epoch'))
             self.current_step = int(self.readParam('current_epoch'))
-            self.current_millis = int(self.readParam('current_millis'))
+            self.current_millis = float(self.readParam('current_millis'))
         else:
             # create directory for the model and store the parameters there
             if not os.path.exists(model_dir):
@@ -158,7 +158,7 @@ class Model:
         else:
             self.groundtruth = tf.placeholder(dtype=tf.int32, shape=[None, \
                 self.num_classes])
-            self.prediction = SimpleClassifier(self).createGraph()
+            SimpleClassifier(self).createGraph()
             self.__useClassesLoss()
         # creates the optimizer
         # create the save path
@@ -189,7 +189,12 @@ class Model:
     def decayLearningRate(self, decay):
         self.learning_rate = self.learning_rate * decay
         self.writeParam('learning_rate', self.learning_rate)
-        self.setOptimizer()
+        self.__createOptimizer()
+
+    def getTrainMode(self):
+        return self.feature_extractor + '_' + self.encoder + '_' + self.decoder \
+            + '_' + str(self.encoder_size) + '_' + str(self.decoder_size) + '_' + \
+            self.optimizer
 
     def trainStep(self, inp, groundtruth):
         feed_dict={self.input: inp, self.groundtruth: groundtruth, self.is_training:True, \
@@ -207,13 +212,14 @@ class Model:
             print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
             if self.current_step % 100 == 0:
                 self.save()
-        self.current_train_prediction = self.__argmaxs(self.current_train_prediction)
+        if self.used_loss == 'label':
+            self.current_train_prediction = self.__argmaxs(self.current_train_prediction)
+            self.current_infer_prediction = self.__argmaxs(self.current_infer_prediction)
+            self.current_infer_prediction = \
+                self.__fillWithEndTokens(self.current_infer_prediction)
+            self.current_infer_prediction = self.current_infer_prediction.astype(int)
         self.current_train_accuracy = self.__calculateAccuracy( \
             self.current_train_prediction, groundtruth)
-        self.current_infer_prediction = self.__argmaxs(self.current_infer_prediction)
-        self.current_infer_prediction = \
-            self.__fillWithEndTokens(self.current_infer_prediction)
-        self.current_infer_prediction = self.current_infer_prediction.astype(int)
         self.current_infer_accuracy = self.__calculateAccuracy( \
             self.current_infer_prediction, groundtruth)
         self.current_step  = self.current_step + 1
@@ -225,15 +231,21 @@ class Model:
             self.current_infer_prediction = self.session.run([self.train_loss, \
             self.infer_loss, self.train_prediction, self.infer_prediction], \
             feed_dict=feed_dict)
-        self.current_train_prediction = self.__argmaxs(self.current_train_prediction)
+        if self.used_loss == 'label':
+            self.current_train_prediction = self.__argmaxs(self.current_train_prediction)
+            self.current_infer_prediction = self.__argmaxs(self.current_infer_prediction)
+            self.current_infer_prediction = \
+                self.__fillWithEndTokens(self.current_infer_prediction)
+            self.current_infer_prediction = self.current_infer_prediction.astype(int)
         self.current_train_accuracy = self.__calculateAccuracy( \
             self.current_train_prediction, groundtruth)
-        self.current_infer_prediction = self.__argmaxs(self.current_infer_prediction)
-        self.current_infer_prediction = \
-            self.__fillWithEndTokens(self.current_infer_prediction)
-        self.current_infer_prediction = self.current_infer_prediction.astype(int)
         self.current_infer_accuracy = self.__calculateAccuracy( \
             self.current_infer_prediction, groundtruth)
+
+    def predict(self, wanted, inp):
+        feed_dict={self.input: inp, self.is_training:False, self.keep_prob:1.0}
+        prediction = self.session.run(wanted, feed_dict=feed_dict)
+        return prediction
 
     def restoreLastCheckpoint(self):
         saver = tf.train.Saver()
@@ -398,12 +410,14 @@ class Model:
     def __useClassesLoss(self):
         self.used_loss = 'classes'
         with tf.variable_scope("classesLoss", reuse=None):
-            loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.groundtruth, \
-                logits=self.prediction)
-            self.loss = tf.reduce_mean(loss)
+            #code.interact(local=dict(globals(), **locals()))
+            loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.to_float( \
+                self.groundtruth), logits=self.prediction)
+            self.train_loss = tf.reduce_mean(loss)
+            self.infer_loss = self.train_loss
             self.prediction = tf.sigmoid(self.prediction)
-            self.predictionDistribution = self.prediction
-            self.prediction = tf.round(self.predictionDistribution)
+            self.train_prediction = tf.round(self.prediction)
+            self.infer_prediction = self.train_prediction
 
     def __fillWithEndTokens(self, prediction):
         prediction_filled = np.zeros([prediction.shape[0], self.max_num_tokens])
