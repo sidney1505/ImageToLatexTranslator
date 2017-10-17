@@ -3,14 +3,66 @@ import Trainer
 import tensorflow as tf
 
 class GreedyHyperparamterTuner:
-    def __init__(self):
+    def __init__(self, best_param_dir):
         self.modes=['e2e','stepbystep']
-        self.feature_extractors=['alexnetFe','wysiwysgFe','vggFe','resnetFe','densenetFe']
+        self.feature_extractors=['alexnetFe','wysiwysgFe','vggFe','resnetFe']
         self.encoders=['monorowEnc','birowEnc','monocolEnc','bicolEnc','quadroEnc']
         self.decoders=['simpleDec','simplegruDec','bahdanauDec','luongDec']
         self.encoder_sizes=[512,1024,2048,4096]
         self.decoder_sizes=[512,1024,2048,4096]
-        self.optimizers=['vanillaSGD','momentum','adam','adadelta']
+        self.optimizers=['sgd','momentum','adam','adadelta']
+        #
+        self.trainer = Trainer.Trainer(os.environ['BASE_MODEL_DIR'], os.environ['DATA_DIR'],\
+            os.environ['TMP_DIR'], 1000000)
+        self.best_param_dir = os.environ['BEST_MODEL_DIR']
+        self.current_mode = self.readParam('mode')
+        self.current_feature_extractor = self.readParam('feature_extractor')
+        self.current_encoder = self.readParam('encoder')
+        self.current_decoder = self.readParam('decoder')
+        self.current_encoder_size = int(self.readParam('encoder_size'))
+        self.current_decoder_size = int(self.readParam('decoder_size'))
+        self.current_optimizer = self.readParam('optimizer')
+        self.current_best_accuracy = float(self.readParam('best_accuracy'))
+
+    def readParam(self, param):
+        read_path = self.model_dir + '/' + param
+        if not os.path.exists(read_path):
+            raise Exception(read_path + ' does not exist!')
+        reader = open(read_path, 'r')
+        value = reader.read()
+        reader.close()
+        return value
+
+    def writeParam(self, param, value):
+        param_path = self.model_dir
+        if not os.path.exists(param_path):
+            os.makedirs(param_path)
+        write_path = params_path + '/' + param
+        shutil.rmtree(write_path, ignore_errors=True)
+        writer = open(write_path, 'w')
+        writer.write(str(value))
+        writer.close()
+
+    def testMode(self, mode):
+        trainer.setModelParameters(mode, self.current_feature_extractor, \
+            self.current_encoder, self.current_decoder, self.current_encoder_size, \
+            self.current_decoder_size, self.current_optimizer)
+        trainer.trainModel()
+        model_accuracy = trainer.testModel()
+        if self.current_best_accuracy < model_accuracy:
+            self.writeParam('best_accuracy', model_accuracy)
+            self.writeParam('mode', mode)
+
+    def testFeatureExtractor(self, feature_extractor):
+        trainer.setModelParameters(self.current_mode, feature_extractor, \
+            self.current_encoder, self.current_decoder, self.current_encoder_size, \
+            self.current_decoder_size, self.current_optimizer)
+        trainer.trainModel()
+        model_accuracy = trainer.testModel()
+        if self.current_best_accuracy < model_accuracy:
+            self.writeParam('best_accuracy', model_accuracy)
+            self.writeParam('feature_extractor', feature_extractor)
+
 
     def findBestConfiguration(self):
         self.current_mode=0
@@ -32,7 +84,8 @@ class GreedyHyperparamterTuner:
                 self.encoder_sizes[self.current_encoder_size], \
                 self.decoder_sizes[self.current_decoder_size], \
                 self.optimizers[self.current_optimizer])
-            current_accuracy = Trainer.run()
+            trainer.trainModel()
+            current_accuracy = trainer.run()
             if current_accuracy > best_accuracy:
                 best_accuracy = current_accuracy
                 self.current_mode = mode
@@ -127,10 +180,10 @@ def main(args):
     try:
         trainer = Trainer.Trainer(os.environ['BASE_MODEL_DIR'], os.environ['DATA_DIR'],\
             os.environ['TMP_DIR'], 1000000)
-        ght = GreedyHyperparamterTuner()
         sess = tf.Session()
         print('greedy hyper parameter main')
         code.interact(local=dict(globals(), **locals()))
+        ght = GreedyHyperparamterTuner()
         trainer.trainModel()
         #ght.findBestConfiguration()
     except:

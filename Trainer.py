@@ -33,6 +33,8 @@ class Trainer:
         self.decoder_size = 1024
         self.optimizer = 'sgd'
         self.initial_learning_rate = 0.1
+        # indicates whether and which preprocessed batches should be used
+        self.preprocessing = ''
 
     def setModelParameters(self, mode, feature_extractor, encoder, decoder, encoder_size, \
             decoder_size, optimizer):
@@ -44,7 +46,7 @@ class Trainer:
         self.decoder_size = decoder_size
         self.optimizer = optimizer
 
-    def trainModel(self):
+    def trainModel(self, proceed=True):
         if self.mode == 'e2e':
             self.model = Model(self.model_dir, self.feature_extractor, \
                 self.encoder, self.decoder, self.encoder_size, \
@@ -54,7 +56,7 @@ class Trainer:
             self.train()
         elif self.mode == 'stepbystep':
             fe_dir = self.__findBestModel(self.feature_extractor, optimizer=self.optimizer)
-            if fe_dir == None:
+            if fe_dir == None or not proceed:
                 self.model = Model(self.model_dir, self.feature_extractor, optimizer= \
                     self.optimizer, vocabulary=self.vocabulary, capacity=self.capacity, \
                     max_num_tokens =self.__getMaxNumTokens(self.__getBatchDir('train')), \
@@ -67,12 +69,14 @@ class Trainer:
             basedir = self.dataset_dir + "/" + self.model.feature_extractor
             if not os.path.exists(basedir + '_train_batches') or \
                     not os.path.exists(basedir + '_val_batches') or \
-                    not os.path.exists(basedir + '_test_batches'):
+                    not os.path.exists(basedir + '_test_batches') or \
+                    not proceed:
                 self.processData()
+            self.preprocessing = self.model.feature_extractor + '_'
             ed_dir = self.__findBestModel(encoder=self.encoder, decoder=self.decoder, \
                 encoder_size=self.encoder_size, decoder_size=self.decoder_size, \
                 optimizer=self.optimizer)
-            if ed_dir == None:
+            if ed_dir == None or not proceed:
                 self.model = Model(self.model_dir, encoder=self.encoder, \
                     decoder=self.decoder, encoder_size=self.encoder_size, \
                     decoder_size=self.decoder_size, optimizer=self.optimizer, \
@@ -82,9 +86,9 @@ class Trainer:
                 self.train()
                 self.testModel()
                 ed_dir = self.model.model_dir
-            else:
-                self.loadModel(ed_dir)
-            self.model = self.combineModels(fe_dir, ed_dir)
+            self.preprocessing = ''
+            self.combineModels(fe_dir, ed_dir)
+            # code.interact(local=dict(globals(), **locals()))
             self.train()
 
     def processData(self):
@@ -94,8 +98,9 @@ class Trainer:
             shutil.rmtree(path, ignore_errors=True)
             os.makedirs(path)
             batch_it = 0
-            batch_images, minibatchsize, batch_it, batch_labels, new_iteration, \
-                batch_classes_true, batch_imgnames = self.__loadBatch(phase, batch_it)
+            batch_images, minibatchsize, batch_it, groundtruth, new_iteration, \
+                batch_classes_true, batch_imgnames, batch_labels = self.__loadBatch( \
+                phase, batch_it)
             while not new_iteration: # randomise!!!
                 print(batch_it)
                 minibatch_predictions = []
@@ -118,8 +123,9 @@ class Trainer:
                         image_names=batch_imgnames)
                 print(phase + 'batch' + str(batch_it) + " saved! " + \
                     str(batch_prediction.shape))
-                batch_images, minibatchsize, batch_it, batch_labels, new_iteration, \
-                    batch_classes_true, batch_imgnames = self.__loadBatch(phase, batch_it)
+                batch_images, minibatchsize, batch_it, groundtruth, new_iteration, \
+                    batch_classes_true, batch_imgnames, batch_labels = \
+                    self.__loadBatch(phase, batch_it)
 
     def train(self):
         # the training loop
@@ -159,8 +165,8 @@ class Trainer:
             true2true = np.zeros(self.model.num_classes)
             true2false = np.zeros(self.model.num_classes)
         batch_it = 0
-        batch_images, minibatchsize, batch_it, \
-            batch_labels, new_iteration, batch_classes_true, batch_imgnames = \
+        batch_images, minibatchsize, batch_it, groundtruth, new_iteration, \
+            batch_classes_true, batch_imgnames, batch_labels = \
             self.__loadBatch(phase, batch_it)
         num_samples = 0
         samples_correct = 0
@@ -172,6 +178,11 @@ class Trainer:
         infer_losses = []
         infer_accuracies = []
         while not new_iteration: # randomise!!!
+            if batch_labels.shape[-1] != self.model.max_num_tokens:
+                self.loadModel(self.model.model_dir, max_num_tokens= \
+                    batch_labels.shape[-1])
+                print('model needed to be reloaded, this will cause massive slowdown!')
+                #code.interact(local=dict(globals(), **locals()))
             print(batch_it)
             batch_predictions = []
             for minibatch_it in range(batch_images.shape[0] \
@@ -179,22 +190,22 @@ class Trainer:
                 # create the minibatches
                 minibatch_images = self.__createMinibatch(batch_images, \
                     minibatch_it, minibatchsize)
-                minibatch_labels = self.__createMinibatch(batch_labels, \
+                minigroundtruth = self.__createMinibatch(groundtruth, \
                     minibatch_it, minibatchsize)
                 minibatch_imgnames = self.__createMinibatch(batch_imgnames, \
                     minibatch_it, minibatchsize)
                 #
                 #code.interact(local=dict(globals(), **locals()))
                 if phase == 'train':
-                    self.model.trainStep(minibatch_images, minibatch_labels)
+                    self.model.trainStep(minibatch_images, minigroundtruth)
                 else:
-                    self.model.valStep(minibatch_images, minibatch_labels)
+                    self.model.valStep(minibatch_images, minigroundtruth)
 
                 # make the prints for the minibatch
                 print(phase + 'minibatch(' + str(self.model.current_epoch) + ',' + \
                     str(batch_it - 1) + ',' + str(minibatch_it*minibatchsize)+')[' + \
                     str(self.model.current_step) + '] : '+ str(minibatch_images.shape) + \
-                    ' : ' + str(minibatch_labels.shape))
+                    ' : ' + str(minigroundtruth.shape))
                 print(self.model.model_dir)
                 train_losses.append(self.model.current_train_loss)
                 train_accuracies.append(self.model.current_train_accuracy)
@@ -209,25 +220,25 @@ class Trainer:
                     str(self.model.current_infer_accuracy) + ' : ' + \
                     str(np.mean(infer_accuracies)))
 
-                if self.model.current_train_accuracy > 0.95:
+                '''if self.model.current_train_accuracy > 0.95:
                     return np.mean(train_losses), np.mean(train_accuracies), \
-                        np.mean(infer_losses), np.mean(infer_accuracies)
+                        np.mean(infer_losses), np.mean(infer_accuracies)'''
 
                 if phase != 'train':
                     label_pred = ''
                     label_gold = ''
-                    for batch in range(minibatch_labels.shape[0]):
+                    for batch in range(minigroundtruth.shape[0]):
                         num_samples = num_samples + 1
                         all_were_correct = 1
-                        for token in range(minibatch_labels.shape[1]):
+                        for token in range(minigroundtruth.shape[1]):
                             if self.model.current_infer_prediction[batch][token] == \
                                     self.model.num_classes - 1 and \
-                                    minibatch_labels[batch][token] == \
+                                    minigroundtruth[batch][token] == \
                                     self.model.num_classes - 1:
                                 break
                             num_tokens = num_tokens + 1
                             if self.model.current_infer_prediction[batch][token] != \
-                                    minibatch_labels[batch][token]:
+                                    minigroundtruth[batch][token]:
                                 all_were_correct = 0
                             else:
                                 tokens_correct = tokens_correct + 1
@@ -236,34 +247,34 @@ class Trainer:
                             line = minibatch_imgnames[batch] + '\t'
                             label_pred = ''
                             label_gold = ''
-                            for token in range(minibatch_labels.shape[1]):
+                            for token in range(minigroundtruth.shape[1]):
                                 if self.model.num_classes - 1 == \
                                         self.model.current_infer_prediction[batch][token]:
                                     break
                                 label_pred = label_pred + self.model.vocabulary[ \
                                     self.model.current_infer_prediction[batch][token]] + ' '
                                 #code.interact(local=dict(globals(), **locals()))
-                            for token in range(minibatch_labels.shape[1]):
+                            for token in range(minigroundtruth.shape[1]):
                                 if self.model.num_classes - 1 == \
-                                        int(minibatch_labels[batch][token]):
+                                        int(minigroundtruth[batch][token]):
                                     break
                                 label_gold = label_gold + self.model.vocabulary[ \
-                                    int(minibatch_labels[batch][token])] + ' '                        
+                                    int(minigroundtruth[batch][token])] + ' '                        
                             line = line + label_gold[:-1] + '\t' + label_pred[:-1] + '\t' + \
                                 '-1' + '\t' + '-1' + '\n'
                             lines = lines + line
                         '''else:
-                            for token in range(minibatch_labels.shape[1]):
-                                if minibatch_labels[batch][token] == 0 and \
+                            for token in range(minigroundtruth.shape[1]):
+                                if minigroundtruth[batch][token] == 0 and \
                                         minibatch_predictions[batch][token] == 0:
                                     false2false[token] = false2false[token] + 1
-                                elif minibatch_labels[batch][token] == 0 and \
+                                elif minigroundtruth[batch][token] == 0 and \
                                         minibatch_predictions[batch][token] == 1:
                                     false2true[token] = false2true[token] + 1
-                                elif minibatch_labels[batch][token] == 1 and \
+                                elif minigroundtruth[batch][token] == 1 and \
                                         minibatch_predictions[batch][token] == 1:
                                     true2true[token] = true2true[token] + 1
-                                elif minibatch_labels[batch][token] == 1 and \
+                                elif minigroundtruth[batch][token] == 1 and \
                                         minibatch_predictions[batch][token] == 0:
                                     true2false[token] = true2false[token] + 1
                                 else:
@@ -285,8 +296,8 @@ class Trainer:
                 self.model.writeParamInList('train/infer_accuracies_' + \
                     str(self.model.current_epoch), str(np.mean(infer_accuracies)))
             batch_images, minibatchsize, batch_it, \
-                batch_labels, new_iteration, batch_classes_true, \
-                batch_imgnames = self.__loadBatch(phase, batch_it)
+                groundtruth, new_iteration, batch_classes_true, \
+                batch_imgnames, batch_labels = self.__loadBatch(phase, batch_it)
         if phase != 'train':
             self.model.writeParam(phase + 'results/epoch' + \
                 str(self.model.current_epoch), lines)
@@ -337,6 +348,9 @@ class Trainer:
         if model_dir == None:
             model_dir = self.findBestModel(feature_extractor, encoder, decoder,\
                 encoder_size, decoder_size, optimizer)
+        print(model_dir)
+        #if model_dir.split('/')[-1][0] == '_':
+        #    code.interact(local=dict(globals(), **locals()))
         self.model = Model(model_dir, max_num_tokens=max_num_tokens, loaded=True)
         print('load variables!')
         self.model.restoreLastCheckpoint()
@@ -362,23 +376,30 @@ class Trainer:
         if fe_dir == None:
             fe_dir = self.findBestModel(feature_extractor, optimizer=optimizer)
         variables = {}
-        fe = self.loadModel(fe_dir)
+        self.loadModel(fe_dir)
+        feature_extractor = self.model.feature_extractor
         for v in tf.global_variables():
-            value = fe.session.run(v)
+            value = self.model.session.run(v)
             variables.update({str(v.name): value})
-        ed = self.loadModel(ed_dir)
+        #if ed_dir == None:
+        #    ed_dir = self.findBestModel(feature_extractor, optimizer=optimizer)
+        self.loadModel(ed_dir)
         for v in tf.global_variables():
-            value = encoder_decoder.session.run(v)
+            value = self.model.session.run(v)
             variables.update({str(v.name): value})
-        model = Model(self.model_dir, feature_extractor=fe.feature_extractor,
-            encoder=ed.encoder, decoder=ed.decoder, decoder_size=ed.decoder_size,
-            optimizer=ed.optimizer, vocabulary=ed.vocabulary, \
-            num_classes=ed.num_classes, max_num_tokens=ed.max_num_tokens)
+        #code.interact(local=dict(globals(), **locals()))
+        self.model = Model(self.model_dir, feature_extractor=feature_extractor, \
+            encoder=self.model.encoder, decoder=self.model.decoder, \
+            encoder_size=self.model.decoder_size, \
+            decoder_size=self.model.decoder_size, \
+            optimizer=self.model.optimizer, vocabulary=self.vocabulary, \
+            max_num_tokens=self.model.max_num_tokens, \
+            capacity = self.capacity)
         for v in tf.trainable_variables():
             if v.name in variables.keys():
                 v = v.assign(variables[v.name])
-                x = model.session.run(v)
-        model.printGlobalVariables()
+                x = self.model.session.run(v)
+        self.model.printGlobalVariables()
         print('#############################################################')
         print('#############################################################')
         print('#############################################################')
@@ -386,7 +407,6 @@ class Trainer:
         print('#############################################################')
         print('#############################################################')
         print('#############################################################')
-        return model
 
     def testModel(self):
         train_loss, train_accuracy, infer_loss, infer_accuracy = \
@@ -420,16 +440,16 @@ class Trainer:
         return best_model_path
 
     def __getBatchDir(self, phase): # vorsicht bei encdecOnly!!!
-        return self.dataset_dir + '/' + phase + '_batches'
+        return self.dataset_dir + '/' + self.preprocessing + phase + '_batches'
 
     def __getMaxNumTokens(self, path):
         batch0 = np.load(path + '/' + os.listdir(path)[0])
         return len(batch0['labels'][-1])
 
     def __getBatchNames(self, phase):
-        assert os.path.exists(self.dataset_dir + '/' + phase + '_batches'), \
+        assert os.path.exists(self.__getBatchDir(phase)), \
             phase + " directory doesn't exists!"
-        batchnames = os.listdir(self.dataset_dir + '/' + phase + '_batches')
+        batchnames = os.listdir(self.__getBatchDir(phase))
         assert batchnames != [], phase + " batch directory musn't be empty!"
         return batchnames
 
@@ -438,7 +458,6 @@ class Trainer:
         batch_images = None
         new_iteration = False
         minibatchsize = None
-        batch_labels = None
         batch_it_old = batch_it
         batch_names = self.__getBatchNames(phase)
         #code.interact(local=dict(globals(), **locals()))
@@ -455,16 +474,17 @@ class Trainer:
                 new_iteration = (batch_it + 1 >= len(batch_names))
                 batch_it = (batch_it + 1) % len(batch_names)
                 assert batch_it != batch_it_old, 'capacity to small for training data'
-        if self.model.used_loss == 'label':
-            batch_labels = batch['labels']
-        elif self.model.used_loss == 'classes':
-            batch_labels = batch['contained_classes_list']
         classes_true = batch['contained_classes_list']
+        labels = batch['labels']
+        if self.model.used_loss == 'label':
+            groundtruth = batch['labels']
+        elif self.model.used_loss == 'classes':
+            groundtruth = batch['contained_classes_list']
         new_iteration = (batch_it + 1 >= len(batch_names))
         batch_it = (batch_it + 1) % len(batch_names)
-        assert len(batch_images) == len(batch_labels) != 0
-        return batch_images, minibatchsize, batch_it, batch_labels, new_iteration, \
-            classes_true, batch_imgnames
+        assert len(batch_images) == len(groundtruth) != 0
+        return batch_images, minibatchsize, batch_it, groundtruth, new_iteration, \
+            classes_true, batch_imgnames, labels
 
     def drawLossGraph(self, epoch):
         train_loss_strings = self.model.readParamList('train/losses_' + str(epoch))

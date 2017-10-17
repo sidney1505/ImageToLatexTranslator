@@ -34,7 +34,8 @@ class Model:
         if loaded:
             # load parameters from given directory
             self.model_dir = model_dir
-            #code.interact(local=dict(globals(), **locals()))
+            #if model_dir.split('/')[-1][0] == '_':
+            #    code.interact(local=dict(globals(), **locals()))
             # unchangable parameters
             self.feature_extractor = self.readParam('feature_extractor')
             self.encoder = self.readParam('encoder')
@@ -43,10 +44,26 @@ class Model:
             self.decoder_size = int(self.readParam('decoder_size'))
             self.vocabulary = np.array(self.readParam('vocabulary').split('\n'))
             # changable parameters
-            self.optimizer = self.readParam('optimizer')
-            self.learning_rate = self.readParam('learning_rate')
-            self.max_num_tokens = int(self.readParam('max_num_tokens'))
-            self.capacity = int(self.readParam('capacity'))
+            if optimizer == '':
+                self.optimizer = self.readParam('optimizer')
+            else:
+                self.optimizer = optimizer
+                self.writeParam('optimizer',str(optimizer))
+            if learning_rate == 0:
+                self.learning_rate = self.readParam('learning_rate')
+            else:
+                self.learning_rate = learning_rate
+                self.writeParam('learning_rate',str(learning_rate))
+            if max_num_tokens == None:
+                self.max_num_tokens = int(self.readParam('max_num_tokens'))
+            else:
+                self.max_num_tokens = max_num_tokens
+                self.writeParam('max_num_tokens',str(max_num_tokens))
+            if capacity <= 0:
+                self.capacity = int(self.readParam('capacity'))
+            else:
+                self.capacity = capacity
+                self.writeParam('capacity',str(capacity))
             # implicit parameters
             self.current_epoch = int(self.readParam('current_epoch'))
             self.current_step = int(self.readParam('current_epoch'))
@@ -74,6 +91,7 @@ class Model:
             self.writeParam('decoder_size',str(decoder_size))
             self.vocabulary = np.array(vocabulary.split('\n'))
             self.writeParam('vocabulary',str(vocabulary))
+            #
             self.optimizer = optimizer
             self.writeParam('optimizer',str(optimizer))
             self.learning_rate = learning_rate
@@ -313,7 +331,7 @@ class Model:
         read_path = self.model_dir + '/params/' + path
         if not os.path.exists(read_path):
             print(read_path + ' does not exist!')
-            quit()
+            return []
         reader = open(read_path, 'r')
         value = reader.read().split('\n')[:-1]
         reader.close()
@@ -322,8 +340,7 @@ class Model:
     def readParam(self, path):
         read_path = self.model_dir + '/params/' + path
         if not os.path.exists(read_path):
-            print(read_path + ' does not exist!')
-            quit()
+            raise Exception(read_path + ' does not exist!')
         reader = open(read_path, 'r')
         value = reader.read()
         reader.close()
@@ -405,6 +422,14 @@ class Model:
             print('exception in label loss')
             print(sys.exc_info())
             code.interact(local=dict(globals(), **locals()))
+
+    # temporary solution
+    def setMaxNumTokens(self, new_max_num_tokens):
+        if self.max_num_tokens != new_max_num_tokens:
+            self.max_num_tokens = new_max_num_tokens
+            self.groundtruth = tf.placeholder(dtype=tf.int32, shape=[None, \
+                self.max_num_tokens])
+            self.__useLabelLoss()
 
     # indicates to fit the predicted classes to the gold classes as objective
     def __useClassesLoss(self):

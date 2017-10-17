@@ -1,12 +1,12 @@
--> geladene modelle wieder trainierbar machen
--> stepbystep training fixen
---> preprocessing der daten validieren
---> zusammführung und finetuning ermöglichen
--> greedyhyperparametertuner sinnvoll ausführbar machen
---> abspeichern/fortführung an jedem punkt der greedy search ermöglichen
--> inferenzhelper sinnvoll einsetzen
---> BeamSearchDecoder zum laufen bringen
---> absolute accuracies zum validieren vergleichen!
 -> encoder size und decoder size sinnvoll verwenden
--> weitere auswertungsmöglichkeiten erstellen
---> confusion matrix bei testdurchläufen
+-> absolute accuracies zum validieren vergleichen!
+-> geladene modelle wieder trainierbar machen
+-> BeamSearchDecoder zum laufen bringen
+-> confusion matrix bei testdurchläufen
+
+4. Evaluation
+* classification netze vergleich: vgg....
+* training des RNN mit fixen features (ohne attention)
+* end to end
+* attention module
+* confusion matrix der captions
