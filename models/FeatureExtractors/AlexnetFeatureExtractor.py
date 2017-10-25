@@ -55,5 +55,8 @@ class AlexnetFeatureExtractor(FeatureExtractor):
                     tf.random_normal_initializer())
                 features = tf.nn.bias_add(features, b3)
                 features = tf.nn.relu(features)
+
+            features = tf.contrib.layers.batch_norm(features)
+            features = tflearn.layers.conv.max_pool_2d(features, [2,2], strides=[2,2])
                  
             return features

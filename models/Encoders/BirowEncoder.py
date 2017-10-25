@@ -14,9 +14,9 @@ class BirowEncoder(Encoder):
             #code.interact(local=dict(globals(), **locals()))
             features = tf.reshape(self.model.features,[batchsize,shape[1]*shape[2], \
                 num_features])
-            rnncell_fw = tf.contrib.rnn.BasicLSTMCell(1024) # TODO choose parameter
+            rnncell_fw = tf.contrib.rnn.BasicLSTMCell(self.model.encoder_size / 2)
             fw_state = rnncell_fw.zero_state(batch_size=batchsize, dtype=tf.float32)
-            rnncell_bw = tf.contrib.rnn.BasicLSTMCell(1024) # TODO choose parameter
+            rnncell_bw = tf.contrib.rnn.BasicLSTMCell(self.model.encoder_size / 2)
             bw_state = rnncell_bw.zero_state(batch_size=batchsize, dtype=tf.float32)
             output, state = \
                 tf.nn.bidirectional_dynamic_rnn(rnncell_fw, \

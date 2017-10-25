@@ -25,13 +25,13 @@ class Trainer:
         self.tmp_dir = tmp_dir
         self.capacity = capacity
         # standart values for the hyperparameters
-        self.mode = 'stepbystep'
-        self.feature_extractor = 'wysiwygFe'
+        self.mode = 'e2e'
+        self.feature_extractor = 'vggFe'
         self.encoder = 'birowEnc'
-        self.decoder = 'simpleDec'
-        self.encoder_size = 1024
-        self.decoder_size = 1024
-        self.optimizer = 'sgd'
+        self.decoder = 'bahdanauDec'
+        self.encoder_size = 2048
+        self.decoder_size = 2048
+        self.optimizer = 'adadelta'
         self.initial_learning_rate = 0.1
         # indicates whether and which preprocessed batches should be used
         self.preprocessing = ''
@@ -66,14 +66,17 @@ class Trainer:
                 fe_dir = self.model.model_dir
             else:
                 self.loadModel(fe_dir)
-            basedir = self.dataset_dir + "/" + self.model.feature_extractor
-            if not os.path.exists(basedir + '_train_batches') or \
-                    not os.path.exists(basedir + '_val_batches') or \
-                    not os.path.exists(basedir + '_test_batches') or \
+            preprocessing = self.model.feature_extractor + 'Preprocessed_'
+            basedir = self.dataset_dir + "/" + preprocessing
+            if not os.path.exists(basedir + 'train_batches') or \
+                    not os.path.exists(basedir + 'val_batches') or \
+                    not os.path.exists(basedir + 'test_batches') or \
                     not proceed:
-                self.processData()
-            self.preprocessing = self.model.feature_extractor + '_'
-            ed_dir = self.__findBestModel(encoder=self.encoder, decoder=self.decoder, \
+                # code.interact(local=dict(globals(), **locals()))
+                self.processData(preprocessing)
+            self.preprocessing = preprocessing
+            ed_dir = self.__findBestModel(feature_extractor=self.preprocessing[:-1], \
+                encoder=self.encoder, decoder=self.decoder, \
                 encoder_size=self.encoder_size, decoder_size=self.decoder_size, \
                 optimizer=self.optimizer)
             if ed_dir == None or not proceed:
@@ -91,9 +94,9 @@ class Trainer:
             # code.interact(local=dict(globals(), **locals()))
             self.train()
 
-    def processData(self):
+    def processData(self, preprocessing):
         for phase in ['train','val','test']:
-            path = self.dataset_dir + "/" + self.model.feature_extractor + '_' + \
+            path = self.dataset_dir + "/" + preprocessing + '_' + \
                     phase + '_batches'
             shutil.rmtree(path, ignore_errors=True)
             os.makedirs(path)
@@ -145,6 +148,9 @@ class Trainer:
             self.model.current_millis = self.model.current_millis + (end - begin)
             self.model.writeParam('current_millis',self.model.current_millis)
             # checks whether model is still learning or overfitting
+            if self.model.current_epoch > 50:
+                print('model trainind lasted to long!')
+                break
             if train_last_loss < train_loss:
                 train_last_loss = train_loss
                 val_last_loss = val_loss
@@ -154,8 +160,7 @@ class Trainer:
                 val_last_loss = val_loss
             else:
                 print('model starts to overfit!')
-                print('before termination')
-                code.interact(local=dict(globals(), **locals()))
+                # code.interact(local=dict(globals(), **locals()))
                 break
 
     def __iterateOneEpoch(self, phase):
@@ -206,7 +211,7 @@ class Trainer:
                     str(batch_it - 1) + ',' + str(minibatch_it*minibatchsize)+')[' + \
                     str(self.model.current_step) + '] : '+ str(minibatch_images.shape) + \
                     ' : ' + str(minigroundtruth.shape))
-                print(self.model.model_dir)
+                print(self.preprocessing.split('_')[0] + self.model.model_dir)
                 train_losses.append(self.model.current_train_loss)
                 train_accuracies.append(self.model.current_train_accuracy)
                 print(str(self.model.current_train_loss) + ' : ' + \
@@ -299,15 +304,14 @@ class Trainer:
                 groundtruth, new_iteration, batch_classes_true, \
                 batch_imgnames, batch_labels = self.__loadBatch(phase, batch_it)
         if phase != 'train':
-            self.model.writeParam(phase + 'results/epoch' + \
+            self.model.writeParam(phase + '_results/epoch' + \
                 str(self.model.current_epoch), lines)
             absolute_acc = float(samples_correct) / float(num_samples)
-            self.model.writeParam(phase + 'absolute_accuracy/epoch' + \
+            self.model.writeParam(phase + '_absolute_accuracy/epoch' + \
                 str(self.model.current_epoch), str(absolute_acc))
-            token_acc = float(tokens_correct) / float(num_tokens)
-            self.model.writeParam(phase + 'token_accuracy/epoch' + \
-                str(self.model.current_epoch), str(absolute_acc))
-            print('abs: ' + str(absolute_acc) + ', tok: ' + str(token_acc))
+            self.model.writeParam(phase + '_token_accuracy/epoch' + \
+                str(self.model.current_epoch), str(np.mean(infer_accuracies)))
+            print('abs: ' + str(absolute_acc) + ', tok: ' + str(np.mean(infer_accuracies)))
             '''if self.model.used_loss == 'classes':
                 with open(self.model.model_dir + '/confusion.npz', 'w') as fout:
                     np.savez(fout,false2false=false2false,false2true=false2true, \
@@ -411,10 +415,16 @@ class Trainer:
     def testModel(self):
         train_loss, train_accuracy, infer_loss, infer_accuracy = \
             self.__iterateOneEpoch('test')
+        print('model testing is finished!')
+        # code.interact(local=dict(globals(), **locals()))
         final_accuracy_writer = open(self.model.model_dir + '/final_accuracy','w')
         final_accuracy_writer.write(str(infer_accuracy))
         final_accuracy_writer.close()
-        best_model_path = self.__findBestModel(self.feature_extractor, self.encoder, \
+        if self.preprocessing == '':
+            fe = self.feature_extractor
+        else:
+            fe = self.preprocessing[:-1]
+        best_model_path = self.__findBestModel(fe, self.encoder, \
             self.decoder, self.encoder_size, self.optimizer)
         if best_model_path != None:
             best_model_reader = open(best_model_path + '/final_accuracy','r')
@@ -422,7 +432,8 @@ class Trainer:
             best_model_reader.close()
             if infer_accuracy < best_final_accuracy:
                 return infer_accuracy
-        path = self.tmp_dir + '/' + self.model.getTrainMode()
+        path = self.tmp_dir + '/' + self.preprocessing + self.model.getTrainMode() + '_' \
+            + self.mode
         best_model_writer = open(path,'w')
         best_model_writer.write(self.model.model_dir)
         best_model_writer.close()
@@ -431,7 +442,8 @@ class Trainer:
     def __findBestModel(self, feature_extractor='', encoder='', decoder='', \
         encoder_size=0, decoder_size=0, optimizer=''):
         path = self.tmp_dir + '/' + feature_extractor + '_' + encoder + '_' + decoder \
-             + '_' + str(encoder_size) + '_' + str(decoder_size) + '_' + optimizer
+            + '_' + str(encoder_size) + '_' + str(decoder_size) + '_' + optimizer + \
+            '_' + self.mode
         if not os.path.exists(path):
             return None
         reader = open(path, 'r')
@@ -448,9 +460,9 @@ class Trainer:
 
     def __getBatchNames(self, phase):
         assert os.path.exists(self.__getBatchDir(phase)), \
-            phase + " directory doesn't exists!"
+            self.__getBatchDir(phase) + " directory doesn't exists!"
         batchnames = os.listdir(self.__getBatchDir(phase))
-        assert batchnames != [], phase + " batch directory musn't be empty!"
+        assert batchnames != [], self.__getBatchDir(phase)+" batch directory musn't be empty!"
         return batchnames
 
     def __loadBatch(self, phase, batch_it):

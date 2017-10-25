@@ -1,4 +1,3 @@
--> encoder size und decoder size sinnvoll verwenden
 -> absolute accuracies zum validieren vergleichen!
 -> geladene modelle wieder trainierbar machen
 -> BeamSearchDecoder zum laufen bringen

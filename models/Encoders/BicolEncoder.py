@@ -12,9 +12,9 @@ class BicolEncoder(Encoder):
             num_features = self.model.features.shape[3].value
             features = tf.transpose(self.model.features,[0,2,1,3])
             features = tf.reshape(features,[batchsize,shape[1]*shape[2],num_features])
-            rnncell_fw = tf.contrib.rnn.BasicLSTMCell(1024) # TODO choose parameter
+            rnncell_fw = tf.contrib.rnn.BasicLSTMCell(self.model.encoder_size / 2) # TODO choose parameter
             fw_state = rnncell_fw.zero_state(batch_size=batchsize, dtype=tf.float32)
-            rnncell_bw = tf.contrib.rnn.BasicLSTMCell(1024) # TODO choose parameter
+            rnncell_bw = tf.contrib.rnn.BasicLSTMCell(self.model.encoder_size / 2) # TODO choose parameter
             bw_state = rnncell_bw.zero_state(batch_size=batchsize, dtype=tf.float32)
             output, state = \
                 tf.nn.bidirectional_dynamic_rnn(rnncell_fw, \

@@ -17,9 +17,9 @@ class QuadroEncoder(Encoder):
             #code.interact(local=dict(globals(), **locals()))
             # rows
             features = tf.reshape(self.model.features,[batchsize,rows*cols,num_features])
-            rnncell_fw = tf.contrib.rnn.BasicLSTMCell(512) # TODO choose parameter
+            rnncell_fw = tf.contrib.rnn.BasicLSTMCell(self.model.encoder_size / 4) # TODO choose parameter
             fw_state = rnncell_fw.zero_state(batch_size=batchsize, dtype=tf.float32)
-            rnncell_bw = tf.contrib.rnn.BasicLSTMCell(512) # TODO choose parameter
+            rnncell_bw = tf.contrib.rnn.BasicLSTMCell(self.model.encoder_size / 4) # TODO choose parameter
             bw_state = rnncell_bw.zero_state(batch_size=batchsize, dtype=tf.float32)
             row_output, row_state = tf.nn.bidirectional_dynamic_rnn(rnncell_fw, \
                 rnncell_bw, features, initial_state_fw=fw_state, initial_state_bw=bw_state)
@@ -28,9 +28,9 @@ class QuadroEncoder(Encoder):
             row_state_bw_hidden, row_state_bw = row_state_bw
             # cols
             col_features = tf.reshape(col_features,[batchsize,cols*rows,num_features])
-            col_rnncell_fw = tf.contrib.rnn.BasicLSTMCell(512) # TODO choose parameter
+            col_rnncell_fw = tf.contrib.rnn.BasicLSTMCell(self.model.encoder_size / 4) # TODO choose parameter
             col_fw_state = col_rnncell_fw.zero_state(batch_size=batchsize, dtype=tf.float32)
-            col_rnncell_bw = tf.contrib.rnn.BasicLSTMCell(512) # TODO choose parameter
+            col_rnncell_bw = tf.contrib.rnn.BasicLSTMCell(self.model.encoder_size / 4) # TODO choose parameter
             col_bw_state = col_rnncell_bw.zero_state(batch_size=batchsize, dtype=tf.float32)
             with tf.variable_scope('col', reuse=None):
                 col_output, col_state = tf.nn.bidirectional_dynamic_rnn(col_rnncell_fw, \

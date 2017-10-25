@@ -13,7 +13,7 @@ class MonocolEncoder(Encoder):
             num_features = self.model.features.shape[3].value
             features = tf.transpose(self.model.features,[0,2,1,3])
             features = tf.reshape(self.model.features,[batchsize,shape[1]*shape[2],num_features])
-            rnncell = tf.contrib.rnn.BasicLSTMCell(2048) # hyperparamter
+            rnncell = tf.contrib.rnn.BasicLSTMCell(self.model.encoder_size) #
             state = rnncell.zero_state(batch_size=batchsize, dtype=tf.float32)
             output, state = tf.nn.dynamic_rnn(rnncell, features, initial_state=state)
         return output, state

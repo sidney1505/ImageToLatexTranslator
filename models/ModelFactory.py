@@ -66,7 +66,7 @@ class Model:
                 self.writeParam('capacity',str(capacity))
             # implicit parameters
             self.current_epoch = int(self.readParam('current_epoch'))
-            self.current_step = int(self.readParam('current_epoch'))
+            self.current_step = int(self.readParam('current_step'))
             self.current_millis = float(self.readParam('current_millis'))
         else:
             # create directory for the model and store the parameters there
@@ -108,13 +108,6 @@ class Model:
             self.current_millis = 0
             self.writeParam('current_millis',str(self.current_millis))
         self.num_classes = len(self.vocabulary)
-        # create necessary paths
-        self.logs = self.model_dir + '/logs'
-        if not os.path.exists(self.logs):
-            os.makedirs(self.logs)
-        self.logfile_dir = self.model_dir + '/logfile'
-        if not os.path.exists(self.logfile_dir):
-            os.makedirs(self.logfile_dir)
         # placeholders which are necessary to seperate phases
         self.keep_prob = tf.placeholder(tf.float32)
         self.is_training = tf.placeholder(tf.bool, [])
@@ -144,15 +137,15 @@ class Model:
                 self.max_num_tokens])
             # define the encoder
             if self.encoder == 'monorowEnc':
-                self.outputs, self.state = MonorowEncoder(self).createGraph()
+                self.refined_features, self.state = MonorowEncoder(self).createGraph()
             elif self.encoder == 'birowEnc':
-                self.outputs, self.state = BirowEncoder(self).createGraph()
+                self.refined_features, self.state = BirowEncoder(self).createGraph()
             elif self.encoder == 'monocolEnc':
-                self.outputs, self.state = MonocolEncoder(self).createGraph()
+                self.refined_features, self.state = MonocolEncoder(self).createGraph()
             elif self.encoder == 'bicolEnc':
-                self.outputs, self.state = BicolEncoder(self).createGraph()
+                self.refined_features, self.state = BicolEncoder(self).createGraph()
             elif self.encoder == 'quadroEnc':
-                self.outputs, self.state = QuadroEncoder(self).createGraph()
+                self.refined_features, self.state = QuadroEncoder(self).createGraph()
             else:
                 print(self.encoder + ' is no valid encoder type!')
                 quit()
@@ -223,12 +216,12 @@ class Model:
             self.update_step, self.train_loss, self.infer_loss, self.train_prediction, \
             self.infer_prediction], feed_dict=feed_dict)
         if self.current_step % 100 == 0 and self.current_step != 0:
-            print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
-            print('global step: ' + str(self.current_step))
-            print('Current Weights:')
-            self.printTrainableVariables()
-            print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
-            if self.current_step % 100 == 0:
+            if self.used_loss == 'label' or self.current_step % 1000 == 0:
+                print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
+                print('global step: ' + str(self.current_step))
+                print('Current Weights:')
+                self.printTrainableVariables()
+                print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
                 self.save()
         if self.used_loss == 'label':
             self.current_train_prediction = self.__argmaxs(self.current_train_prediction)
@@ -392,36 +385,35 @@ class Model:
 
     # indicates to fit the predicted label to the gold label as objective
     def __useLabelLoss(self):
-        try:
-            self.used_loss = 'label'
-            with tf.variable_scope("labelLoss", reuse=None):
-                batchsize = tf.shape(self.train_prediction)
-                self.train_distribution = tf.nn.softmax(self.train_prediction)
-                self.train_pred = tf.argmax(self.train_distribution, axis=2)
-                diff = self.max_num_tokens - tf.shape(self.train_pred)[1]
-                self.prediction_greedy = tf.pad(self.train_pred, [[0,0],[0,diff]])
-                eos_gt = tf.argmax(self.groundtruth, 1)
-                eos_pred = tf.argmax(self.train_pred, 1)
-                max_seq_length = tf.maximum(eos_gt, eos_pred)
-                weights = tf.sequence_mask(max_seq_length, self.max_num_tokens)
-                weights = tf.cast(weights, tf.float32)
-                self.train_loss = tf.contrib.seq2seq.sequence_loss(self.train_prediction,\
-                    self.groundtruth, weights)
-                self.infer_distribution = tf.nn.softmax(self.infer_prediction)
-                self.infer_pred = tf.argmax(self.infer_distribution, axis=2)
-                diff = self.max_num_tokens - tf.shape(self.infer_pred)[1]
-                self.prediction_greedy = tf.pad(self.infer_pred, [[0,0],[0,diff]])
-                eos_gt = tf.argmax(self.groundtruth, 1)
-                eos_pred = tf.argmax(self.infer_pred, 1)
-                max_seq_length = tf.maximum(eos_gt, eos_pred)
-                weights = tf.sequence_mask(max_seq_length, self.max_num_tokens)
-                weights = tf.cast(weights, tf.float32)
-                self.infer_loss = tf.contrib.seq2seq.sequence_loss(self.infer_prediction,\
-                    self.groundtruth, weights)
-        except Exception:
-            print('exception in label loss')
-            print(sys.exc_info())
-            code.interact(local=dict(globals(), **locals()))
+        self.used_loss = 'label'
+        with tf.variable_scope("labelLoss", reuse=None):
+            batchsize = tf.shape(self.train_prediction)
+            self.train_distribution = tf.nn.softmax(self.train_prediction)
+            self.train_pred = tf.argmax(self.train_distribution, axis=2)
+            diff = self.max_num_tokens - tf.shape(self.train_pred)[1]
+            self.prediction_greedy = tf.pad(self.train_pred, [[0,0],[0,diff]])
+            eos_gt = tf.argmax(self.groundtruth, 1)
+            eos_pred = tf.argmax(self.train_pred, 1)
+            max_seq_length = tf.maximum(eos_gt, eos_pred)
+            weights = tf.sequence_mask(max_seq_length, self.max_num_tokens)
+            weights = tf.cast(weights, tf.float32)
+            self.train_loss = tf.contrib.seq2seq.sequence_loss(self.train_prediction,\
+                self.groundtruth, weights)
+            self.infer_distribution = tf.nn.softmax(self.infer_prediction)
+            self.infer_pred = tf.argmax(self.infer_distribution, axis=2)
+            diff = self.max_num_tokens - tf.shape(self.infer_pred)[1]
+            self.prediction_greedy = tf.pad(self.infer_pred, [[0,0],[0,diff]])
+            eos_gt = tf.argmax(self.groundtruth, 1)
+            eos_pred = tf.argmax(self.infer_pred, 1)
+            max_seq_length = tf.maximum(eos_gt, eos_pred)
+            weights = tf.sequence_mask(max_seq_length, self.max_num_tokens)
+            weights = tf.cast(weights, tf.float32)
+            self.infer_loss = tf.contrib.seq2seq.sequence_loss(self.infer_prediction,\
+                self.groundtruth, weights)
+        #except Exception:
+        #    print('exception in label loss')
+        #    print(sys.exc_info())
+        #    code.interact(local=dict(globals(), **locals()))
 
     # temporary solution
     def setMaxNumTokens(self, new_max_num_tokens):
@@ -467,12 +459,15 @@ class Model:
             matches = 0
             count = 0
             for token in range(gt.shape[1]):
-                if pred[batch][token] == self.max_num_tokens - 1 and \
-                        gt[batch][token] == self.max_num_tokens - 1:
+                if pred[batch][token] == self.num_classes - 1 and \
+                        gt[batch][token] == self.num_classes - 1:
+                    #print('break at token '+ str(token))
+                    #print(str(matches) + '/' + str(count))
                     break
                 count = count + 1
                 if pred[batch][token] == gt[batch][token]:
                     matches = matches + 1
+                # code.interact(local=dict(globals(), **locals()))
             accuracies.append(float(matches) / float(count))
         return np.mean(accuracies)
 

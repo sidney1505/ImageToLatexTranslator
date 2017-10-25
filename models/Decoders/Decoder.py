@@ -33,6 +33,8 @@ class Decoder():
                 trainhelper, initial_state, output_layer=projection_layer)
             infer_decoder = tf.contrib.seq2seq.BasicDecoder(decodercell, \
                 inferhelper, initial_state, output_layer=projection_layer)
+            #infer_decoder = tf.contrib.seq2seq.BeamSearchDecoder(decodercell, embedding, \
+            #    start_tokens, END_SYMBOL, initial_state, 5, projection_layer)
             train_final_outputs, train_final_state, train_final_sequence_lengths = \
                 tf.contrib.seq2seq.dynamic_decode(train_decoder,\
                 maximum_iterations=self.model.max_num_tokens)
@@ -41,6 +43,7 @@ class Decoder():
                 maximum_iterations=self.model.max_num_tokens)
             self.model.train_prediction = train_final_outputs[0]
             self.model.infer_prediction = infer_final_outputs[0]
+            # code.interact(local=dict(globals(), **locals()))
 
     def createDecoderCell(self):
         raise NotImplementedError
