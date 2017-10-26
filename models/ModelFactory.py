@@ -137,15 +137,19 @@ class Model:
                 self.max_num_tokens])
             # define the encoder
             if self.encoder == 'monorowEnc':
-                self.refined_features, self.state = MonorowEncoder(self).createGraph()
+                #MonorowEncoder(self).createGraph()
+                self.monoenc = MonorowEncoder(self)
+                self.monoenc.createGraph()
             elif self.encoder == 'birowEnc':
-                self.refined_features, self.state = BirowEncoder(self).createGraph()
+                BirowEncoder(self).createGraph()
             elif self.encoder == 'monocolEnc':
-                self.refined_features, self.state = MonocolEncoder(self).createGraph()
+                #MonocolEncoder(self).createGraph()
+                self.monoenc = MonocolEncoder(self)
+                self.monoenc.createGraph()
             elif self.encoder == 'bicolEnc':
-                self.refined_features, self.state = BicolEncoder(self).createGraph()
+                BicolEncoder(self).createGraph()
             elif self.encoder == 'quadroEnc':
-                self.refined_features, self.state = QuadroEncoder(self).createGraph()
+                QuadroEncoder(self).createGraph()
             else:
                 print(self.encoder + ' is no valid encoder type!')
                 quit()
@@ -210,7 +214,7 @@ class Model:
     def trainStep(self, inp, groundtruth):
         feed_dict={self.input: inp, self.groundtruth: groundtruth, self.is_training:True, \
             self.keep_prob:0.5}
-        #code.interact(local=dict(globals(), **locals()))
+        # code.interact(local=dict(globals(), **locals()))
         _,self.current_train_loss, self.current_infer_loss, self.current_train_prediction, \
             self.current_infer_prediction = self.session.run([\
             self.update_step, self.train_loss, self.infer_loss, self.train_prediction, \

@@ -26,12 +26,12 @@ class Trainer:
         self.capacity = capacity
         # standart values for the hyperparameters
         self.mode = 'e2e'
-        self.feature_extractor = 'vggFe'
-        self.encoder = 'birowEnc'
-        self.decoder = 'bahdanauDec'
+        self.feature_extractor = 'wysiwygFe'
+        self.encoder = 'monocolEnc'
+        self.decoder = 'simpleDec'
         self.encoder_size = 2048
         self.decoder_size = 2048
-        self.optimizer = 'adadelta'
+        self.optimizer = 'sgd'
         self.initial_learning_rate = 0.1
         # indicates whether and which preprocessed batches should be used
         self.preprocessing = ''
@@ -54,6 +54,7 @@ class Trainer:
                 self.vocabulary, self.__getMaxNumTokens(self.__getBatchDir('train')), \
                 self.capacity)
             self.train()
+            self.testModel()
         elif self.mode == 'stepbystep':
             fe_dir = self.__findBestModel(self.feature_extractor, optimizer=self.optimizer)
             if fe_dir == None or not proceed:
@@ -93,6 +94,7 @@ class Trainer:
             self.combineModels(fe_dir, ed_dir)
             # code.interact(local=dict(globals(), **locals()))
             self.train()
+            self.testModel()
 
     def processData(self, preprocessing):
         for phase in ['train','val','test']:
@@ -499,13 +501,15 @@ class Trainer:
             classes_true, batch_imgnames, labels
 
     def drawLossGraph(self, epoch):
-        train_loss_strings = self.model.readParamList('train/losses_' + str(epoch))
+        train_loss_strings = trainer.model.readParamList('train/losses_' + str(epoch))
         train_losses = []
-        infer_loss_strings = self.model.readParamList('train/infer_losses_' + str(epoch))
+        infer_loss_strings = trainer.model.readParamList('train/infer_losses_' + str(epoch))
         infer_losses = []
         for i in range(len(train_loss_strings)):
-            trainlosses.append(float(train_loss_strings[i]))
-            inferlosses.append(float(infer_loss_strings[i]))
+            train_losses.append(float(train_loss_strings[i]))
+            infer_losses.append(float(infer_loss_strings[i]))
+
+
         plt.plot(range(1,len(train_losses) + 1), train_losses, color='blue')
         plt.plot(range(1,len(infer_losses) + 1), infer_losses, color='red')
         plt.show()

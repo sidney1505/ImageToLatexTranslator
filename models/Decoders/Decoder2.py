@@ -25,9 +25,9 @@ class Decoder():
                 END_SYMBOL)
             projection_layer = layers_core.Dense(self.model.num_classes, use_bias=False)
             train_decoder = tf.contrib.seq2seq.BasicDecoder(decodercell, \
-                trainhelper, self.model.input_summary, output_layer=projection_layer)
+                trainhelper, initial_state, output_layer=projection_layer)
             infer_decoder = tf.contrib.seq2seq.BasicDecoder(decodercell, \
-                inferhelper, self.model.input_summary, output_layer=projection_layer)
+                inferhelper, initial_state, output_layer=projection_layer)
             #infer_decoder = tf.contrib.seq2seq.BeamSearchDecoder(decodercell, embedding, \
             #    start_tokens, END_SYMBOL, initial_state, 5, projection_layer)
             train_final_outputs, train_final_state, train_final_sequence_lengths = \

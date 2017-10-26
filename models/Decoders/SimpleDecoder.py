@@ -7,5 +7,5 @@ class SimpleDecoder(Decoder):
         Decoder.__init__(self, model)
 
     def createDecoderCell(self):
-        return tf.contrib.rnn.BasicLSTMCell(self.statesize)
+        return tf.contrib.rnn.BasicLSTMCell(self.model.encoder_size)
 
