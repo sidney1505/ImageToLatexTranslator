@@ -14,6 +14,7 @@ from Encoders.MonorowEncoder import MonorowEncoder
 from Encoders.BirowEncoder import BirowEncoder
 from Encoders.MonocolEncoder import MonocolEncoder
 from Encoders.BicolEncoder import BicolEncoder
+from Encoders.RowcolEncoder import RowcolEncoder
 from Encoders.QuadroEncoder import QuadroEncoder
 # import decoders
 from Decoders.SimpleDecoder import SimpleDecoder
@@ -148,6 +149,8 @@ class Model:
                 self.monoenc.createGraph()
             elif self.encoder == 'bicolEnc':
                 BicolEncoder(self).createGraph()
+            elif self.encoder == 'rowcolEnc':
+                RowcolEncoder(self).createGraph()
             elif self.encoder == 'quadroEnc':
                 QuadroEncoder(self).createGraph()
             else:
@@ -215,24 +218,25 @@ class Model:
         feed_dict={self.input: inp, self.groundtruth: groundtruth, self.is_training:True, \
             self.keep_prob:0.5}
         # code.interact(local=dict(globals(), **locals()))
+        #code.interact(local=dict(globals(), **locals()))
+
         _,self.current_train_loss, self.current_infer_loss, self.current_train_prediction, \
             self.current_infer_prediction = self.session.run([\
             self.update_step, self.train_loss, self.infer_loss, self.train_prediction, \
             self.infer_prediction], feed_dict=feed_dict)
-        if self.current_step % 100 == 0 and self.current_step != 0:
-            if self.used_loss == 'label' or self.current_step % 1000 == 0:
-                print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
-                print('global step: ' + str(self.current_step))
-                print('Current Weights:')
-                self.printTrainableVariables()
-                print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
-                self.save()
-        if self.used_loss == 'label':
+        if self.current_step % 1000 == 0 and self.current_step != 0:
+            print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
+            print('global step: ' + str(self.current_step))
+            print('Current Weights:')
+            self.printTrainableVariables()
+            print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
+            self.save()
+        '''if self.used_loss == 'label':
             self.current_train_prediction = self.__argmaxs(self.current_train_prediction)
             self.current_infer_prediction = self.__argmaxs(self.current_infer_prediction)
             self.current_infer_prediction = \
                 self.__fillWithEndTokens(self.current_infer_prediction)
-            self.current_infer_prediction = self.current_infer_prediction.astype(int)
+            self.current_infer_prediction = self.current_infer_prediction.astype(int)'''
         self.current_train_accuracy = self.__calculateAccuracy( \
             self.current_train_prediction, groundtruth)
         self.current_infer_accuracy = self.__calculateAccuracy( \
@@ -246,12 +250,12 @@ class Model:
             self.current_infer_prediction = self.session.run([self.train_loss, \
             self.infer_loss, self.train_prediction, self.infer_prediction], \
             feed_dict=feed_dict)
-        if self.used_loss == 'label':
+        '''if self.used_loss == 'label':
             self.current_train_prediction = self.__argmaxs(self.current_train_prediction)
             self.current_infer_prediction = self.__argmaxs(self.current_infer_prediction)
             self.current_infer_prediction = \
                 self.__fillWithEndTokens(self.current_infer_prediction)
-            self.current_infer_prediction = self.current_infer_prediction.astype(int)
+            self.current_infer_prediction = self.current_infer_prediction.astype(int)'''
         self.current_train_accuracy = self.__calculateAccuracy( \
             self.current_train_prediction, groundtruth)
         self.current_infer_accuracy = self.__calculateAccuracy( \
@@ -321,7 +325,7 @@ class Model:
             os.makedirs(params_path)
         write_path = params_path + '/' + path.split('/')[-1]
         writer = open(write_path, 'a')
-        writer.write(value + '\n')
+        writer.write(str(value) + '\n')
         writer.close()
 
     def readParamList(self, path):
@@ -349,8 +353,15 @@ class Model:
             print(v.name + ' : ' + str(v.get_shape()) + ' : ' + str(np.mean(x)) + ' : ' \
                 + str(np.var(x)))
 
+    def printTrainableVariablesInScope(self, scope):
+        for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope):
+            if v in tf.trainable_variables():
+                x = self.session.run(v)
+                print(v.name + ' : ' + str(v.get_shape()) + ' : ' + str(np.mean(x)) + ' : ' \
+                    + str(np.var(x)))
+
     def printGlobalVariables(self):
-        for v in tf.global_variables():
+        for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES):
             x = self.session.run(v)
             print(v.name + ' : ' + str(v.get_shape()) + ' : ' + str(np.mean(x)) + ' : ' \
                 + str(np.var(x)))
@@ -391,29 +402,36 @@ class Model:
     def __useLabelLoss(self):
         self.used_loss = 'label'
         with tf.variable_scope("labelLoss", reuse=None):
-            batchsize = tf.shape(self.train_prediction)
-            self.train_distribution = tf.nn.softmax(self.train_prediction)
-            self.train_pred = tf.argmax(self.train_distribution, axis=2)
-            diff = self.max_num_tokens - tf.shape(self.train_pred)[1]
-            self.prediction_greedy = tf.pad(self.train_pred, [[0,0],[0,diff]])
-            eos_gt = tf.argmax(self.groundtruth, 1)
-            eos_pred = tf.argmax(self.train_pred, 1)
+            gt = tf.transpose(self.groundtruth)
+            gt_train = gt[:tf.shape(self.train_energy)[1]]
+            gt_train = tf.transpose(gt_train)
+            self.train_distribution = tf.nn.softmax(self.train_energy)
+            #
+            self.train_prediction = tf.argmax(self.train_distribution, axis=-1)
+            #diff = self.max_num_tokens - tf.shape(self.train_pred)[1]
+            #self.prediction_greedy = tf.pad(self.train_pred, [[0,0],[0,diff]])
+            eos_gt = tf.argmax(gt_train, 1)
+            eos_pred = tf.argmax(self.train_prediction, 1)
             max_seq_length = tf.maximum(eos_gt, eos_pred)
-            weights = tf.sequence_mask(max_seq_length, self.max_num_tokens)
+            weights = tf.sequence_mask(max_seq_length, tf.shape(gt_train)[-1])
             weights = tf.cast(weights, tf.float32)
-            self.train_loss = tf.contrib.seq2seq.sequence_loss(self.train_prediction,\
-                self.groundtruth, weights)
-            self.infer_distribution = tf.nn.softmax(self.infer_prediction)
-            self.infer_pred = tf.argmax(self.infer_distribution, axis=2)
-            diff = self.max_num_tokens - tf.shape(self.infer_pred)[1]
-            self.prediction_greedy = tf.pad(self.infer_pred, [[0,0],[0,diff]])
-            eos_gt = tf.argmax(self.groundtruth, 1)
-            eos_pred = tf.argmax(self.infer_pred, 1)
+            #code.interact(local=dict(globals(), **locals()))
+            self.train_loss = tf.contrib.seq2seq.sequence_loss(self.train_energy,\
+                gt_train, weights)
+            #
+            gt_infer = gt[:tf.shape(self.infer_energy)[1]]
+            gt_infer = tf.transpose(gt_infer)
+            self.infer_distribution = tf.nn.softmax(self.infer_energy)
+            self.infer_prediction = tf.argmax(self.infer_distribution, axis=2)
+            #diff = self.max_num_tokens - tf.shape(self.infer_pred)[1]
+            #self.prediction_greedy = tf.pad(self.infer_pred, [[0,0],[0,diff]])
+            eos_gt = tf.argmax(gt_infer, 1)
+            eos_pred = tf.argmax(self.infer_prediction, 1)
             max_seq_length = tf.maximum(eos_gt, eos_pred)
-            weights = tf.sequence_mask(max_seq_length, self.max_num_tokens)
+            weights = tf.sequence_mask(max_seq_length, tf.shape(gt_infer)[-1])
             weights = tf.cast(weights, tf.float32)
-            self.infer_loss = tf.contrib.seq2seq.sequence_loss(self.infer_prediction,\
-                self.groundtruth, weights)
+            self.infer_loss = tf.contrib.seq2seq.sequence_loss(self.infer_energy,\
+                gt_infer, weights)
         #except Exception:
         #    print('exception in label loss')
         #    print(sys.exc_info())
@@ -460,126 +478,30 @@ class Model:
     def __calculateAccuracy(self, pred, gt):
         accuracies = []
         for batch in range(gt.shape[0]):
+            #print('|||||||||||||||||||||||||||||||||||||')
             matches = 0
             count = 0
             for token in range(gt.shape[1]):
+                if token >= pred.shape[1]:
+                    #print('break at token '+ str(token))
+                    #print('shape: '+ str(pred.shape))
+                    #print(str(matches) + '/' + str(count))
+                    if gt[batch][token] == self.num_classes - 1:
+                        break
+                    else:
+                        count = count + 1
+                        continue
                 if pred[batch][token] == self.num_classes - 1 and \
                         gt[batch][token] == self.num_classes - 1:
-                    #print('break at token '+ str(token))
+                    #print('double break at token '+ str(token))
                     #print(str(matches) + '/' + str(count))
                     break
                 count = count + 1
                 if pred[batch][token] == gt[batch][token]:
                     matches = matches + 1
+                    #print('Match' + str(pred[batch][token]) + ' : ' +  str(gt[batch][token]))
+                #else:
+                    #print('Miss ' + str(pred[batch][token]) + ' : ' +  str(gt[batch][token]))
                 # code.interact(local=dict(globals(), **locals()))
             accuracies.append(float(matches) / float(count))
         return np.mean(accuracies)
-
-'''
-def load(model_dir, train_mode=None, max_num_tokens=None, learning_rate=None, capacity=None, \
-        num_classes=None, combine_models=False, fe_dir=None, \
-        enc_dec_dir=None):
-    tf.reset_default_graph()
-    session = tf.Session()    
-    if not combine_models:
-        old = False
-        if old:
-            params = np.load(model_dir + '/params.npz')
-            capacity = np.asscalar(params['capacity'])
-            learning_rate = np.asscalar(params['learning_rate'])
-        else:
-            train_mode = None
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-        print('###                 Try to restore model!                 ###')
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-        model = Model(model_dir, max_num_tokens=max_num_tokens, \
-            capacity=capacity, learning_rate=learning_rate, \
-            train_mode=train_mode, loaded=True, \
-            session=session)    
-        print('load variables!')
-        saver = tf.train.Saver()
-        saver.restore(session, model_dir + '/weights.ckpt')
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-        print('###                    Model restored!                    ###')
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-    else:
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-        print('###                Try to combine models!                 ###')
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-        #code.interact(local=dict(globals(), **locals()))
-        variables = {}
-        fe = load(fe_dir)
-        #metagraph = tf.train.import_meta_graph(fe_dir + '/weights.ckpt.meta')
-        #metagraph.restore(session, fe_dir + '/weights.ckpt')
-        for v in tf.global_variables():
-            value = fe.session.run(v)
-            #scode.interact(local=dict(globals(), **locals()))
-            variables.update({str(v.name): value})
-        tf.reset_default_graph()
-        encoder_decoder = load(enc_dec_dir)
-        #metagraph = tf.train.import_meta_graph(enc_dec_dir + '/weights.ckpt.meta')
-        #metagraph.restore(session, enc_dec_dir + '/weights.ckpt')
-        for v in tf.global_variables():
-            value = encoder_decoder.session.run(v)
-            variables.update({str(v.name): value})
-        tf.reset_default_graph()
-        model = Model(model_dir, fe.num_classes, fe.max_num_tokens, \
-            fe.readParam('vocabulary'), capacity= capacity, train_mode=train_mode, \
-            loaded=False, learning_rate=learning_rate, num_features=fe.num_features)
-        for v in tf.trainable_variables():
-            if v.name in variables.keys():
-                v = v.assign(variables[v.name])
-                x = model.session.run(v)
-        model.printGlobalVariables()
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-        print('###                   Models combined!                    ###')
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-    return model
-'''
-'''
-def predict(self, inp, gt):
-        feed_dict={self.input: inp,  self.is_training:False, self.keep_prob:1.0,
-            self.groundtruth:np.ones(gt.shape)}
-        print('predict')
-        #code.interact(local=dict(globals(), **locals()))
-        return self.session.run(self.prediction, feed_dict=feed_dict)
-
-    def writeInLogfile(self, prediction, prediction_distribution, groundtruth):
-        if self.used_loss == 'label':
-            #code.interact(local=dict(globals(), **locals()))
-            for batch in range(prediction.shape[0]):
-                predictionPath = self.logfile_dir + '/prediction' + str(\
-                    self.predictionDistributionsDone)
-                fout = open(predictionPath, 'w')
-                for token in range(prediction.shape[1]):
-                    #code.interact(local=dict(globals(), **locals()))
-                    line='\"'+self.vocabulary[prediction[batch][token]]+'\" : '\
-                        + str(np.max(prediction_distribution[batch][token])) + ' -> \"' \
-                        + self.vocabulary[int(groundtruth[batch][token])] + '\" : ' \
-                        + str(prediction_distribution[batch][token] \
-                        [int(groundtruth[batch][token])]) + '\n'
-                    fout.write(line)
-                fout.close()
-                self.predictionDistributionsDone = self.predictionDistributionsDone + 1
-
-    def addLog(self, train_loss, val_loss, train_accuracy, val_accuracy, epoch):
-        with open(self.logs+'/log_'+str(epoch)+'.npz', 'w') as fout:
-            np.savez(fout,train_loss=train_loss,val_loss=val_loss, \
-                train_accuracy=train_accuracy,val_accuracy=val_accuracy)
-'''

@@ -1,6 +1,10 @@
 import sys, os, argparse, logging, time
+import matplotlib as mpl
+mpl.use('Agg')
+mpl.rcParams['xtick.labelsize'] = 7
 import matplotlib.pyplot as plt
 import numpy as np
+import distance
 import code
 import shutil
 import datetime
@@ -27,11 +31,12 @@ class Trainer:
         # standart values for the hyperparameters
         self.mode = 'e2e'
         self.feature_extractor = 'wysiwygFe'
-        self.encoder = 'monocolEnc'
-        self.decoder = 'simpleDec'
+        self.encoder = 'rowcolEnc'
+        self.decoder = 'bahdanauDec'
         self.encoder_size = 2048
-        self.decoder_size = 2048
-        self.optimizer = 'sgd'
+        self.decoder_size = 512
+        self.optimizer = 'momentum'
+        self.max_epochs = 8
         self.initial_learning_rate = 0.1
         # indicates whether and which preprocessed batches should be used
         self.preprocessing = ''
@@ -142,24 +147,39 @@ class Trainer:
                 self.__iterateOneEpoch('train')
             val_loss, val_accuracy, val_infer_loss, val_infer_accuracy = \
                 self.__iterateOneEpoch('val')
-            # updates the implicit parameters of the model
-            self.model.current_epoch = self.model.current_epoch + 1
-            self.model.writeParam('current_epoch',self.model.current_epoch)
+            '''a = (self.model.current_epoch + 1) / 10.0
+            l = 1.0 / a
+            train_loss, train_accuracy, infer_loss, infer_accuracy = l,a,l*2,a/2
+            val_loss, val_accuracy, val_infer_loss, val_infer_accuracy = l*3,a/3,l*4,a/4'''
+            # updates the implicit parameters of the model            
             self.model.writeParam('current_step',self.model.current_step)
             end = time.time()
             self.model.current_millis = self.model.current_millis + (end - begin)
-            self.model.writeParam('current_millis',self.model.current_millis)
+            self.model.writeParamInList('stats/losses/train_train',train_loss)
+            self.model.writeParamInList('stats/losses/train_infer',infer_loss)
+            self.model.writeParamInList('stats/losses/val_train',val_loss)
+            self.model.writeParamInList('stats/losses/val_infer',val_infer_loss)
+            self.model.writeParamInList('stats/accs/train_train',train_accuracy)
+            self.model.writeParamInList('stats/accs/train_infer',infer_accuracy)
+            self.model.writeParamInList('stats/accs/val_train',val_accuracy)
+            self.model.writeParamInList('stats/accs/val_infer',val_infer_accuracy)
+            self.saveLossGraph()
+            self.saveAccGraph()
+            self.saveTrainLossGraph()
+            self.saveTrainAccGraph()
             # checks whether model is still learning or overfitting
-            if self.model.current_epoch > 50:
-                print('model trainind lasted to long!')
+            if self.model.current_epoch >= self.max_epochs - 1:
+                print('model training lasted to long!')
                 break
-            if train_last_loss < train_loss:
+            '''if train_last_loss < train_loss or self.model.current_epoch % 3 == 0:
                 train_last_loss = train_loss
                 val_last_loss = val_loss
-                self.model.decayLearningRate(0.5)
-            elif val_last_loss > val_loss:
+                self.model.decayLearningRate(0.5)'''
+            if val_last_loss > val_loss:
                 train_last_loss = train_loss
                 val_last_loss = val_loss
+                self.model.current_epoch = self.model.current_epoch + 1
+                self.model.writeParam('current_epoch',self.model.current_epoch)
             else:
                 print('model starts to overfit!')
                 # code.interact(local=dict(globals(), **locals()))
@@ -201,18 +221,18 @@ class Trainer:
                     minibatch_it, minibatchsize)
                 minibatch_imgnames = self.__createMinibatch(batch_imgnames, \
                     minibatch_it, minibatchsize)
+                # make the prints for the minibatch
+                print(phase + 'minibatch(' + str(self.model.current_epoch) + ',' + \
+                    str(batch_it - 1) + ',' + str(minibatch_it*minibatchsize)+')[' + \
+                    str(self.model.current_step) + '] : '+ str(minibatch_images.shape) + \
+                    ' : ' + str(minigroundtruth.shape))
                 #
                 #code.interact(local=dict(globals(), **locals()))
                 if phase == 'train':
                     self.model.trainStep(minibatch_images, minigroundtruth)
                 else:
                     self.model.valStep(minibatch_images, minigroundtruth)
-
-                # make the prints for the minibatch
-                print(phase + 'minibatch(' + str(self.model.current_epoch) + ',' + \
-                    str(batch_it - 1) + ',' + str(minibatch_it*minibatchsize)+')[' + \
-                    str(self.model.current_step) + '] : '+ str(minibatch_images.shape) + \
-                    ' : ' + str(minigroundtruth.shape))
+                # make the result prints
                 print(self.preprocessing.split('_')[0] + self.model.model_dir)
                 train_losses.append(self.model.current_train_loss)
                 train_accuracies.append(self.model.current_train_accuracy)
@@ -235,26 +255,30 @@ class Trainer:
                     label_pred = ''
                     label_gold = ''
                     for batch in range(minigroundtruth.shape[0]):
-                        num_samples = num_samples + 1
                         all_were_correct = 1
-                        for token in range(minigroundtruth.shape[1]):
+                        for token in range(self.model.current_infer_prediction.shape[1]):
                             if self.model.current_infer_prediction[batch][token] == \
                                     self.model.num_classes - 1 and \
                                     minigroundtruth[batch][token] == \
                                     self.model.num_classes - 1:
                                 break
-                            num_tokens = num_tokens + 1
                             if self.model.current_infer_prediction[batch][token] != \
                                     minigroundtruth[batch][token]:
                                 all_were_correct = 0
-                            else:
-                                tokens_correct = tokens_correct + 1
+                                break
+                        if self.model.current_infer_prediction.shape[1] < \
+                                minigroundtruth.shape[1] and \
+                                minigroundtruth[batch] \
+                                [self.model.current_infer_prediction.shape[1]]\
+                                != self.model.num_classes - 1:
+                            all_were_correct = 0
+                        num_samples = num_samples + 1
                         samples_correct = samples_correct + all_were_correct
                         if self.model.used_loss == 'label':
                             line = minibatch_imgnames[batch] + '\t'
                             label_pred = ''
                             label_gold = ''
-                            for token in range(minigroundtruth.shape[1]):
+                            for token in range(self.model.current_infer_prediction.shape[1]):
                                 if self.model.num_classes - 1 == \
                                         self.model.current_infer_prediction[batch][token]:
                                     break
@@ -415,13 +439,32 @@ class Trainer:
         print('#############################################################')
 
     def testModel(self):
-        train_loss, train_accuracy, infer_loss, infer_accuracy = \
+        train_loss, train_accuracy, infer_loss, test_infer_accuracy = \
             self.__iterateOneEpoch('test')
         print('model testing is finished!')
         # code.interact(local=dict(globals(), **locals()))
-        final_accuracy_writer = open(self.model.model_dir + '/final_accuracy','w')
-        final_accuracy_writer.write(str(infer_accuracy))
+        final_accuracy_writer = open(self.model.model_dir + '/final_test_accuracy','w')
+        final_accuracy_writer.write(str(test_infer_accuracy))
         final_accuracy_writer.close()
+        final_val_accuracy_reader = open(self.model.model_dir + \
+            '/params/val_token_accuracy/epoch' + str(self.model.current_epoch),'r')
+        val_infer_accuracy = float(final_val_accuracy_reader.read())
+        final_val_accuracy_reader.close()
+        final_val_accuracy_writer = open(self.model.model_dir + '/final_val_accuracy','w')
+        final_val_accuracy_writer.write(str(val_infer_accuracy))
+        final_val_accuracy_writer.close()
+        val_result_path = self.model.model_dir + '/params/val_results/epoch' + \
+            str(self.model.current_epoch)
+        val_text_edit_distance = self.calculateEditDistance(val_result_path)
+        val_ted_writer = open(self.model.model_dir + '/val_text_edit_distance','w')
+        val_ted_writer.write(str(val_text_edit_distance))
+        val_ted_writer.close()
+        test_result_path = self.model.model_dir + '/params/test_results/epoch' + \
+            str(self.model.current_epoch)
+        test_text_edit_distance = self.calculateEditDistance(test_result_path)
+        test_ted_writer = open(self.model.model_dir + '/test_text_edit_distance','w')
+        test_ted_writer.write(str(test_text_edit_distance))
+        test_ted_writer.close()
         if self.preprocessing == '':
             fe = self.feature_extractor
         else:
@@ -429,17 +472,37 @@ class Trainer:
         best_model_path = self.__findBestModel(fe, self.encoder, \
             self.decoder, self.encoder_size, self.optimizer)
         if best_model_path != None:
-            best_model_reader = open(best_model_path + '/final_accuracy','r')
+            best_model_reader = open(best_model_path + '/final_val_accuracy','r')
             best_final_accuracy = float(best_model_reader.read())
             best_model_reader.close()
-            if infer_accuracy < best_final_accuracy:
-                return infer_accuracy
+            if val_infer_accuracy < best_final_accuracy:
+                return val_infer_accuracy
         path = self.tmp_dir + '/' + self.preprocessing + self.model.getTrainMode() + '_' \
             + self.mode
         best_model_writer = open(path,'w')
         best_model_writer.write(self.model.model_dir)
         best_model_writer.close()
-        return infer_accuracy
+        return val_infer_accuracy
+
+    def calculateEditDistance(self, result_file):
+        total_ref = 0
+        total_edit_distance = 0
+        with open(result_file) as fin:
+            for idx,line in enumerate(fin):
+                if idx % 100 == 0:
+                    print (idx)
+                items = line.strip().split('\t')
+                if len(items) == 5:
+                    img_path, label_gold, label_pred, score_pred, score_gold = items
+                    l_pred = label_pred.strip()
+                    l_gold = label_gold.strip()
+                    tokens_pred = l_pred.split(' ')
+                    tokens_gold = l_gold.split(' ')
+                    ref = max(len(tokens_gold), len(tokens_pred))
+                    edit_distance = distance.levenshtein(tokens_gold, tokens_pred)
+                    total_ref += ref
+                    total_edit_distance += edit_distance
+        return 1.0 - float(total_edit_distance) / total_ref
 
     def __findBestModel(self, feature_extractor='', encoder='', decoder='', \
         encoder_size=0, decoder_size=0, optimizer=''):
@@ -500,20 +563,6 @@ class Trainer:
         return batch_images, minibatchsize, batch_it, groundtruth, new_iteration, \
             classes_true, batch_imgnames, labels
 
-    def drawLossGraph(self, epoch):
-        train_loss_strings = trainer.model.readParamList('train/losses_' + str(epoch))
-        train_losses = []
-        infer_loss_strings = trainer.model.readParamList('train/infer_losses_' + str(epoch))
-        infer_losses = []
-        for i in range(len(train_loss_strings)):
-            train_losses.append(float(train_loss_strings[i]))
-            infer_losses.append(float(infer_loss_strings[i]))
-
-
-        plt.plot(range(1,len(train_losses) + 1), train_losses, color='blue')
-        plt.plot(range(1,len(infer_losses) + 1), infer_losses, color='red')
-        plt.show()
-
     def __calculateMinibatchsize(self, image):
         minibatchsize = 20
         while image.shape[0] * image.shape[1] * image.shape[2] * minibatchsize > \
@@ -527,3 +576,180 @@ class Trainer:
                 minibatchsize,len(batch_data))):
             minibatch_data.append(batch_data[it])
         return np.array(minibatch_data)
+
+    def saveLossGraph(self):
+        train_train_loss_strings = self.model.readParamList('stats/losses/train_train')
+        train_infer_loss_strings = self.model.readParamList('stats/losses/train_infer')
+        val_train_loss_strings = self.model.readParamList('stats/losses/val_train')
+        val_infer_loss_strings = self.model.readParamList('stats/losses/val_infer')
+        train_train_losses = []
+        train_infer_losses = []
+        val_train_losses = []
+        val_infer_losses = []
+        for i in range(len(train_train_loss_strings)):
+            train_train_losses.append(float(train_train_loss_strings[i]))
+            train_infer_losses.append(float(train_infer_loss_strings[i]))
+            val_train_losses.append(float(val_train_loss_strings[i]))
+            val_infer_losses.append(float(val_infer_loss_strings[i]))
+        plt.plot(range(1,len(train_train_losses) + 1), train_train_losses, 'b--')
+        plt.plot(range(1,len(train_infer_losses) + 1), train_infer_losses, 'blue')
+        plt.plot(range(1,len(val_train_losses) + 1), val_train_losses, 'r--')
+        plt.plot(range(1,len(val_infer_losses) + 1), val_infer_losses, 'red')
+        save_path = self.model.model_dir + '/plots/losses'
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+        plt.savefig(save_path + '/epoch' + str(self.model.current_epoch))
+        plt.close()
+
+    def saveAccGraph(self):
+        train_train_accs_strings = self.model.readParamList('stats/accs/train_train')
+        train_infer_accs_strings = self.model.readParamList('stats/accs/train_infer')
+        val_train_accs_strings = self.model.readParamList('stats/accs/val_train')
+        val_infer_accs_strings = self.model.readParamList('stats/accs/val_infer')
+        train_train_accs = []
+        train_infer_accs = []
+        val_train_accs = []
+        val_infer_accs = []
+        for i in range(len(train_train_accs_strings)):
+            train_train_accs.append(float(train_train_accs_strings[i]))
+            train_infer_accs.append(float(train_infer_accs_strings[i]))
+            val_train_accs.append(float(val_train_accs_strings[i]))
+            val_infer_accs.append(float(val_infer_accs_strings[i]))
+        plt.plot(range(1,len(train_train_accs) + 1), train_train_accs, 'b--')
+        plt.plot(range(1,len(train_infer_accs) + 1), train_infer_accs, 'blue')
+        plt.plot(range(1,len(val_train_accs) + 1), val_train_accs, 'r--')
+        plt.plot(range(1,len(val_infer_accs) + 1), val_infer_accs, 'red')
+        save_path = self.model.model_dir + '/plots/accs'
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+        plt.savefig(save_path + '/epoch' + str(self.model.current_epoch))
+        plt.close()
+
+    def saveTrainLossGraph(self):
+        train_losses = []
+        infer_losses = []
+        for epoch in range(self.model.current_epoch):
+            train_loss_strings = self.model.readParamList('train/losses_' + str(epoch))
+            infer_loss_strings = self.model.readParamList('train/infer_losses_' + str(epoch))
+            for i in range(len(train_loss_strings)):
+                train_losses.append(float(train_loss_strings[i]))
+                infer_losses.append(float(infer_loss_strings[i]))
+        plt.plot(range(1,len(train_losses) + 1), train_losses, 'b--')
+        plt.plot(range(1,len(infer_losses) + 1), infer_losses, 'blue')
+        save_path = self.model.model_dir + '/plots/train_losses'
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+        plt.savefig(save_path + '/epoch' + str(self.model.current_epoch))
+        plt.close()
+
+    def saveTrainAccGraph(self):
+        train_accs = []
+        infer_accs = []
+        for epoch in range(self.model.current_epoch):
+            train_accs_strings = self.model.readParamList('train/accs_' + str(epoch))
+            infer_accs_strings = self.model.readParamList('train/infer_accs_' + str(epoch))
+            for i in range(len(train_accs_strings)):
+                train_accs.append(float(train_accs_strings[i]))
+                infer_accs.append(float(infer_accs_strings[i]))
+        plt.plot(range(1,len(train_accs) + 1), train_accs, 'b--')
+        plt.plot(range(1,len(infer_accs) + 1), infer_accs, 'blue')
+        save_path = self.model.model_dir + '/plots/train_accs'
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+        plt.savefig(save_path + '/epoch' + str(self.model.current_epoch))
+        plt.close()
+
+    def analyseVocabCount(self):
+        vocabulary = self.vocabulary.split('\n')
+        vocab_count = np.zeros(len(vocabulary))
+        n = 0
+        for phase in ['train','val','test']:
+            for batch_name in self.__getBatchNames(phase):
+                print(phase + '_' + batch_name + ' loaded!')
+                batch = np.load(self.__getBatchDir(phase) + '/' + batch_name)
+                labels = batch['labels']
+                for batch_nr in range(labels.shape[0]):
+                    for token in range(labels.shape[1]):
+                        current_vocab = int(labels[batch_nr][token])
+                        #code.interact(local=dict(globals(), **locals()))
+                        vocab_count[current_vocab] = vocab_count[current_vocab] + 1
+                        n = n + 1
+        # code.interact(local=dict(globals(), **locals()))
+        n1 = n - vocab_count[-1]
+        vocab_norm_count = vocab_count / float(n1)
+        sort_idx = np.argsort(vocab_norm_count)[::-1]
+        # code.interact(local=dict(globals(), **locals()))
+        sorted_vocabulary = []
+        sorted_vocab_counts = []
+        sorted_vocab_string = ''
+        for idx in range(len(sort_idx)):
+            sorted_vocabulary.append(vocabulary[sort_idx[idx]])
+            sorted_vocab_counts.append(vocab_norm_count[sort_idx[idx]])
+            sorted_vocab_string = sorted_vocab_string + str(vocabulary[sort_idx[idx]]) + \
+                ' : ' + str(vocab_norm_count[sort_idx[idx]]) + '\n'
+        vocab_writer = open(self.dataset_dir + '/vocab_stats.txt', 'w')
+        vocab_writer.write(sorted_vocab_string)
+        vocab_writer.close()
+        svocabs = sorted_vocabulary[1:21]
+        y_pos = np.arange(len(svocabs))
+        scounts = sorted_vocab_counts[1:21]
+        plt.bar(y_pos, scounts, align='center', alpha=0.5)
+        plt.xticks(y_pos, svocabs)
+        plt.ylabel('%')
+        plt.title('Frequency')
+        plt.savefig(self.dataset_dir + '/vocab_stats.png')
+        plt.close()
+
+    def analyseTokenCount(self):
+        vocabulary = self.vocabulary.split('\n')
+        endtoken = len(vocabulary) - 1
+        counts = np.zeros(626)
+        for phase in ['train','val','test']:
+            for batch_name in self.__getBatchNames(phase):
+                print(phase + '_' + batch_name + ' loaded!')
+                batch = np.load(self.__getBatchDir(phase) + '/' + batch_name)
+                labels = batch['labels']
+                for batch_nr in range(labels.shape[0]):
+                    count = 0
+                    for token in range(labels.shape[1]):
+                        if labels[batch_nr][token] == endtoken:
+                            break
+                        else:
+                            count = count + 1
+                    counts[count] = counts[count] + 1
+        countlist = []
+        for i in range(len(counts)):
+            countlist = np.append(countlist, np.tile(i,int(counts[i])))
+        std_writer = open(self.dataset_dir + '/label_length_std.txt', 'w')
+        std_writer.write(str(np.std(countlist)))
+        std_writer.close()
+        std_writer = open(self.dataset_dir + '/label_length_mean.txt', 'w')
+        std_writer.write(str(np.mean(countlist)))
+        std_writer.close()
+        std_writer = open(self.dataset_dir + '/label_length_median.txt', 'w')
+        std_writer.write(str(np.median(countlist)))
+        std_writer.close()
+        bins = [15,30,45,60,75,90,105,120,135]
+        bin_labels = ['<15','[15,30)','[30,45)','[45,60)','[60,75)','[75,90)','[90,105)', \
+            '[105,120)','[120,135)', '>=135']
+        binc = np.zeros(10)
+        c = 0
+        for i in range(len(bins)):
+            for j in range(c,bins[i]):
+                binc[i] = binc[i] + counts[j]
+            c = bins[i]
+        for j in range(135,626):
+            binc[9] = binc[9] + counts[j]
+        binfreq = binc / np.sum(binc)
+        y_pos = np.arange(len(binc))
+        plt.bar(y_pos, binfreq, align='center', alpha=1.0)
+        plt.xticks(y_pos, bin_labels)
+        plt.xlabel('tokens')
+        plt.ylabel('%')
+        plt.title('length of the labels')
+        plt.savefig(self.dataset_dir + '/label_length_stats.png')
+        plt.close()
+        code.interact(local=dict(globals(), **locals()))
+
+
+

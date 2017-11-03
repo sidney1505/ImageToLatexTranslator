@@ -98,9 +98,10 @@ def main(args):
     print('enter main method')
     trainer = Trainer.Trainer(os.environ['BASE_MODEL_DIR'], os.environ['DATA_DIR'],\
         os.environ['TMP_DIR'], 1000000)
-    sess = tf.Session()
-    print('greedy hyper parameter main')
+    #sess = tf.Session()
+    #print('greedy hyper parameter main')
     ght = GreedyHyperparamterTuner()
+    #trainer.trainModel()
     code.interact(local=dict(globals(), **locals()))
 
 if __name__ == '__main__':
