@@ -32,7 +32,7 @@ class Trainer:
         self.mode = 'e2e'
         self.feature_extractor = 'wysiwygFe'
         self.encoder = 'rowcolEnc'
-        self.decoder = 'bahdanauDec'
+        self.decoder = 'monoluongDec'
         self.encoder_size = 2048
         self.decoder_size = 512
         self.optimizer = 'momentum'

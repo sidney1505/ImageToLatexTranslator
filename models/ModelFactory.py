@@ -165,6 +165,8 @@ class Model:
                 BahdanauDecoder(self).createGraph()
             elif self.decoder == 'luongDec':
                 LuongDecoder(self).createGraph()
+            elif self.decoder == 'monoluongDec':
+                LuongMonotonicDecoder(self).createGraph()
             else:
                 print(self.decoder + ' is no valid decoder type!')
                 quit()
@@ -402,7 +404,7 @@ class Model:
             self.update_step = optimizer.apply_gradients(zip(clipped_gradients, params))
             l = []
             for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='optimizer'):
-                print(v.name)
+                #print(v.name)
                 l.append(v)
             init = tf.variables_initializer(l)
             self.session.run(init)
