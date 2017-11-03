@@ -27,7 +27,7 @@ class Trainer:
         assert os.path.exists(self.dataset_dir), \
             "Dataset directory doesn't exists!"
         self.tmp_dir = tmp_dir
-        self.capacity = capacity
+        self.capacity = capacity / 2
         # standart values for the hyperparameters
         self.mode = 'e2e'
         self.feature_extractor = 'wysiwygFe'
@@ -36,7 +36,7 @@ class Trainer:
         self.encoder_size = 2048
         self.decoder_size = 512
         self.optimizer = 'momentum'
-        self.max_epochs = 8
+        self.max_epochs = 50
         self.initial_learning_rate = 0.1
         # indicates whether and which preprocessed batches should be used
         self.preprocessing = ''
@@ -167,19 +167,19 @@ class Trainer:
             self.saveAccGraph()
             self.saveTrainLossGraph()
             self.saveTrainAccGraph()
+            self.model.current_epoch = self.model.current_epoch + 1
+            self.model.writeParam('current_epoch',self.model.current_epoch)
             # checks whether model is still learning or overfitting
             if self.model.current_epoch >= self.max_epochs - 1:
                 print('model training lasted to long!')
                 break
-            '''if train_last_loss < train_loss or self.model.current_epoch % 3 == 0:
+            if train_last_loss < train_loss:
                 train_last_loss = train_loss
                 val_last_loss = val_loss
-                self.model.decayLearningRate(0.5)'''
-            if val_last_loss > val_loss:
+                self.model.decayLearningRate(0.5)
+            elif val_last_loss > val_loss:
                 train_last_loss = train_loss
                 val_last_loss = val_loss
-                self.model.current_epoch = self.model.current_epoch + 1
-                self.model.writeParam('current_epoch',self.model.current_epoch)
             else:
                 print('model starts to overfit!')
                 # code.interact(local=dict(globals(), **locals()))
@@ -384,6 +384,7 @@ class Trainer:
         self.model = Model(model_dir, max_num_tokens=max_num_tokens, loaded=True)
         print('load variables!')
         self.model.restoreLastCheckpoint()
+        self.model.createOptimizer()
         print('#############################################################')
         print('#############################################################')
         print('#############################################################')

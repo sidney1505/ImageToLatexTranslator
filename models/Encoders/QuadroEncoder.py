@@ -12,8 +12,7 @@ class QuadroEncoder(Encoder):
             self.channels = self.model.encoder_size / 4
             self.encodeRowsBidirectional()
             self.encodeColsBidirectional()
-            refined_features = tf.concat([self.refined_rows, \
-                self.refined_cols], -1)
+            refined_features = tf.concat([self.refined_rows, self.refined_cols], -1)
             batch = tf.shape(refined_features)[0]
             height = tf.shape(refined_features)[1]
             width = tf.shape(refined_features)[2]

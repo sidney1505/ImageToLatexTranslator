@@ -51,7 +51,7 @@ class Model:
                 self.optimizer = optimizer
                 self.writeParam('optimizer',str(optimizer))
             if learning_rate == 0:
-                self.learning_rate = self.readParam('learning_rate')
+                self.learning_rate = float(self.readParam('learning_rate'))
             else:
                 self.learning_rate = learning_rate
                 self.writeParam('learning_rate',str(learning_rate))
@@ -184,7 +184,7 @@ class Model:
         self.seed_path = self.model_dir + '/seeds.ckpt'
         # initialises all variables
         if not loaded:
-            self.__createOptimizer()
+            self.createOptimizer()
             init = tf.global_variables_initializer()
             self.session.run(init)
             for v in tf.trainable_variables():
@@ -195,6 +195,7 @@ class Model:
                 #print(seed.shape)
             self.save()
             self.__saveSeeds()
+        # code.interact(local=dict(globals(), **locals()))
         #tf.summary.histogram('predictionHisto', self.prediction)
         #tf.summary.scalar('predictionAvg', tf.reduce_mean(self.prediction))
         #tf.summary.tensor_summary('predictionTensor', self.prediction)
@@ -207,7 +208,7 @@ class Model:
     def decayLearningRate(self, decay):
         self.learning_rate = self.learning_rate * decay
         self.writeParam('learning_rate', self.learning_rate)
-        self.__createOptimizer()
+        self.createOptimizer(reuse=True)
 
     def getTrainMode(self):
         return self.feature_extractor + '_' + self.encoder + '_' + self.decoder \
@@ -268,7 +269,7 @@ class Model:
 
     def restoreLastCheckpoint(self):
         saver = tf.train.Saver()
-        self.__createOptimizer()
+        # self.createOptimizer()
         saver.restore(self.session, self.save_path)
 
     def save(self):
@@ -380,23 +381,32 @@ class Model:
         return np.sum([np.prod(v.get_shape().as_list()) \
             for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)])
 
-    def __createOptimizer(self):
-        if self.optimizer == 'momentum':
-            with tf.variable_scope("MyMomentumOptimizer", reuse=None):
+    def createOptimizer(self, reuse=None):
+        with tf.variable_scope("optimizer", reuse=reuse):
+            if self.optimizer == 'momentum':
+                #with tf.variable_scope("MyMomentumOptimizer", reuse=reuse):
                 optimizer = tf.train.MomentumOptimizer(self.learning_rate,0.9)                
-        elif self.optimizer == 'sgd':
-            with tf.variable_scope("MySGDOptimizer", reuse=None):
+            elif self.optimizer == 'sgd':
+                #with tf.variable_scope("MySGDOptimizer", reuse=reuse):
                 optimizer = tf.train.GradientDescentOptimizer(self.learning_rate)
-        elif self.optimizer == 'adam':
-            with tf.variable_scope("MyAdamOptimizer", reuse=None):
+            elif self.optimizer == 'adam':
+                #with tf.variable_scope("MyAdamOptimizer", reuse=reuse):
                 optimizer = tf.train.AdamOptimizer(self.learning_rate)
-        elif self.optimizer == 'adadelta':
-            with tf.variable_scope("MyAdadeltaOptimizer", reuse=None):
+            elif self.optimizer == 'adadelta':
+                #with tf.variable_scope("MyAdadeltaOptimizer", reuse=reuse):
                 optimizer = tf.train.AdadeltaOptimizer(self.learning_rate)
-        params = tf.trainable_variables()
-        gradients = tf.gradients(self.train_loss, params)
-        clipped_gradients, _ = tf.clip_by_global_norm(gradients, 2.0) # in [1,5]
-        self.update_step = optimizer.apply_gradients(zip(clipped_gradients, params))
+            params = tf.trainable_variables()
+            gradients = tf.gradients(self.train_loss, params)
+            # gradients = tf.gradients(self.infer_loss, params)
+            clipped_gradients, _ = tf.clip_by_global_norm(gradients, 2.0) # in [1,5]
+            self.update_step = optimizer.apply_gradients(zip(clipped_gradients, params))
+            l = []
+            for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='optimizer'):
+                print(v.name)
+                l.append(v)
+            init = tf.variables_initializer(l)
+            self.session.run(init)
+            # code.interact(local=dict(globals(), **locals()))
 
     # indicates to fit the predicted label to the gold label as objective
     def __useLabelLoss(self):
