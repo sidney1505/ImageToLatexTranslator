@@ -21,6 +21,7 @@ from Decoders.SimpleDecoder import SimpleDecoder
 from Decoders.SimplegruDecoder import SimplegruDecoder
 from Decoders.BahdanauDecoder import BahdanauDecoder
 from Decoders.LuongDecoder import LuongDecoder
+from Decoders.LuongMonotonicDecoder import LuongMonotonicDecoder
 
 class Model:
     def __init__(self, model_dir, feature_extractor='', encoder='',\

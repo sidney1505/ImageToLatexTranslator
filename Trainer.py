@@ -152,6 +152,8 @@ class Trainer:
             train_loss, train_accuracy, infer_loss, infer_accuracy = l,a,l*2,a/2
             val_loss, val_accuracy, val_infer_loss, val_infer_accuracy = l*3,a/3,l*4,a/4'''
             # updates the implicit parameters of the model            
+            self.model.current_epoch = self.model.current_epoch + 1
+            self.model.writeParam('current_epoch',self.model.current_epoch)
             self.model.writeParam('current_step',self.model.current_step)
             end = time.time()
             self.model.current_millis = self.model.current_millis + (end - begin)
@@ -167,10 +169,8 @@ class Trainer:
             self.saveAccGraph()
             self.saveTrainLossGraph()
             self.saveTrainAccGraph()
-            self.model.current_epoch = self.model.current_epoch + 1
-            self.model.writeParam('current_epoch',self.model.current_epoch)
             # checks whether model is still learning or overfitting
-            if self.model.current_epoch >= self.max_epochs - 1:
+            if self.model.current_epoch >= self.max_epochs:
                 print('model training lasted to long!')
                 break
             if train_last_loss < train_loss:
