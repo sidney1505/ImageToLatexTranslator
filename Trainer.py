@@ -27,15 +27,16 @@ class Trainer:
         assert os.path.exists(self.dataset_dir), \
             "Dataset directory doesn't exists!"
         self.tmp_dir = tmp_dir
-        self.capacity = capacity / 2
+        self.capacity = capacity / 4
         # standart values for the hyperparameters
         self.mode = 'e2e'
         self.feature_extractor = 'wysiwygFe'
         self.encoder = 'rowcolEnc'
-        self.decoder = 'monoluongDec'
+        self.decoder = 'stackedbahdanauDec'
         self.encoder_size = 2048
         self.decoder_size = 512
         self.optimizer = 'momentum'
+        self.min_epochs = 12
         self.max_epochs = 50
         self.initial_learning_rate = 0.1
         # indicates whether and which preprocessed batches should be used
@@ -173,11 +174,11 @@ class Trainer:
             if self.model.current_epoch >= self.max_epochs:
                 print('model training lasted to long!')
                 break
-            if train_last_loss < train_loss:
+            elif train_last_loss < train_loss or self.model.current_epoch % 3 == 0:
                 train_last_loss = train_loss
                 val_last_loss = val_loss
-                self.model.decayLearningRate(0.5)
-            elif val_last_loss > val_loss:
+                self.model.decayLearningRate(0.1)
+            elif val_last_loss > val_loss or self.model.current_epoch < self.min_epochs:
                 train_last_loss = train_loss
                 val_last_loss = val_loss
             else:
@@ -207,7 +208,7 @@ class Trainer:
         while not new_iteration: # randomise!!!
             if batch_labels.shape[-1] != self.model.max_num_tokens:
                 self.loadModel(self.model.model_dir, max_num_tokens= \
-                    batch_labels.shape[-1])
+                    batch_labels.shape[-1], only_inference=self.model.only_inference)
                 print('model needed to be reloaded, this will cause massive slowdown!')
                 #code.interact(local=dict(globals(), **locals()))
             print(batch_it)
@@ -226,14 +227,20 @@ class Trainer:
                     str(batch_it - 1) + ',' + str(minibatch_it*minibatchsize)+')[' + \
                     str(self.model.current_step) + '] : '+ str(minibatch_images.shape) + \
                     ' : ' + str(minigroundtruth.shape))
+                print(self.preprocessing.split('_')[0] + self.model.model_dir)
                 #
                 #code.interact(local=dict(globals(), **locals()))
                 if phase == 'train':
                     self.model.trainStep(minibatch_images, minigroundtruth)
-                else:
+                elif phase == 'val':
                     self.model.valStep(minibatch_images, minigroundtruth)
-                # make the result prints
-                print(self.preprocessing.split('_')[0] + self.model.model_dir)
+                if phase == 'test':
+                    self.model.testStep(minibatch_images)
+                    self.model.current_infer_accuracy = self.model.calculateAccuracy( \
+                        self.model.current_infer_prediction, minigroundtruth)
+                    self.model.current_train_loss = 0
+                    self.model.current_train_accuracy = 0
+                    self.model.current_infer_loss = 0
                 train_losses.append(self.model.current_train_loss)
                 train_accuracies.append(self.model.current_train_accuracy)
                 print(str(self.model.current_train_loss) + ' : ' + \
@@ -367,7 +374,7 @@ class Trainer:
 
     def loadModel(self, model_dir=None, feature_extractor='', \
             encoder='', decoder='', encoder_size='', decoder_size='',
-            optimizer='', max_num_tokens=150):
+            optimizer='', max_num_tokens=150, only_inference=False):
         print('#############################################################')
         print('#############################################################')
         print('#############################################################')
@@ -381,10 +388,12 @@ class Trainer:
         print(model_dir)
         #if model_dir.split('/')[-1][0] == '_':
         #    code.interact(local=dict(globals(), **locals()))
-        self.model = Model(model_dir, max_num_tokens=max_num_tokens, loaded=True)
+        self.model = Model(model_dir, max_num_tokens=max_num_tokens, loaded=True,
+            only_inference=only_inference)
         print('load variables!')
         self.model.restoreLastCheckpoint()
-        self.model.createOptimizer()
+        if not only_inference:
+            self.model.createOptimizer()
         print('#############################################################')
         print('#############################################################')
         print('#############################################################')
@@ -440,6 +449,8 @@ class Trainer:
         print('#############################################################')
 
     def testModel(self):
+        if not self.model.only_inference:
+            self.loadModel(self.model.model_dir, only_inference=True)
         train_loss, train_accuracy, infer_loss, test_infer_accuracy = \
             self.__iterateOneEpoch('test')
         print('model testing is finished!')

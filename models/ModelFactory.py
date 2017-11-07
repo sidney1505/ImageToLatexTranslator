@@ -20,6 +20,7 @@ from Encoders.QuadroEncoder import QuadroEncoder
 from Decoders.SimpleDecoder import SimpleDecoder
 from Decoders.SimplegruDecoder import SimplegruDecoder
 from Decoders.BahdanauDecoder import BahdanauDecoder
+from Decoders.StackedBahdanauDecoder import StackedBahdanauDecoder
 from Decoders.LuongDecoder import LuongDecoder
 from Decoders.LuongMonotonicDecoder import LuongMonotonicDecoder
 
@@ -27,7 +28,7 @@ class Model:
     def __init__(self, model_dir, feature_extractor='', encoder='',\
             decoder='', encoder_size=0, decoder_size=0, optimizer='', \
             learning_rate=0, vocabulary='', max_num_tokens=None, \
-            capacity=-1, loaded=False):
+            capacity=-1, loaded=False, only_inference=False):
         tf.reset_default_graph()
         self.session = tf.Session()
         # temporory solution
@@ -110,6 +111,7 @@ class Model:
             self.current_millis = 0
             self.writeParam('current_millis',str(self.current_millis))
         self.num_classes = len(self.vocabulary)
+        self.only_inference = only_inference
         # placeholders which are necessary to seperate phases
         self.keep_prob = tf.placeholder(tf.float32)
         self.is_training = tf.placeholder(tf.bool, [])
@@ -135,8 +137,11 @@ class Model:
             self.features = self.input
         if self.encoder != '' and self.decoder != '' and self.encoder_size != 0 and \
                 self.decoder_size != 0:
-            self.groundtruth = tf.placeholder(dtype=tf.int32, shape=[None, \
-                self.max_num_tokens])
+            if not only_inference:
+                #print('in model factory constructor')
+                #code.interact(local=dict(globals(), **locals()))
+                self.groundtruth = tf.placeholder(dtype=tf.int32, shape=[None, \
+                    self.max_num_tokens])
             # define the encoder
             if self.encoder == 'monorowEnc':
                 #MonorowEncoder(self).createGraph()
@@ -168,26 +173,33 @@ class Model:
                 LuongDecoder(self).createGraph()
             elif self.decoder == 'monoluongDec':
                 LuongMonotonicDecoder(self).createGraph()
+            elif self.decoder == 'stackedbahdanauDec':
+                StackedBahdanauDecoder(self).createGraph()
             else:
                 print(self.decoder + ' is no valid decoder type!')
                 quit()
-            self.__useLabelLoss()
+            self.used_loss = 'label'
+            if not only_inference:
+                self.__useLabelLoss()
         elif self.encoder != '' or self.decoder != '' or self.encoder_size != 0 or \
                 self.decoder_size != 0:
             print('encoder and decoder must be used together!')
             quit()
         else:
-            self.groundtruth = tf.placeholder(dtype=tf.int32, shape=[None, \
-                self.num_classes])
             SimpleClassifier(self).createGraph()
-            self.__useClassesLoss()
+            sel.used_loss = 'classes'
+            if not only_inference:
+                self.groundtruth = tf.placeholder(dtype=tf.int32, shape=[None, \
+                    self.num_classes])
+                self.__useClassesLoss()
         # creates the optimizer
         # create the save path
         self.save_path = self.model_dir + '/weights.ckpt'
         self.seed_path = self.model_dir + '/seeds.ckpt'
         # initialises all variables
         if not loaded:
-            self.createOptimizer()
+            if not only_inference:
+                self.createOptimizer()
             init = tf.global_variables_initializer()
             self.session.run(init)
             for v in tf.trainable_variables():
@@ -241,9 +253,9 @@ class Model:
             self.current_infer_prediction = \
                 self.__fillWithEndTokens(self.current_infer_prediction)
             self.current_infer_prediction = self.current_infer_prediction.astype(int)'''
-        self.current_train_accuracy = self.__calculateAccuracy( \
+        self.current_train_accuracy = self.calculateAccuracy( \
             self.current_train_prediction, groundtruth)
-        self.current_infer_accuracy = self.__calculateAccuracy( \
+        self.current_infer_accuracy = self.calculateAccuracy( \
             self.current_infer_prediction, groundtruth)
         self.current_step  = self.current_step + 1
 
@@ -254,16 +266,15 @@ class Model:
             self.current_infer_prediction = self.session.run([self.train_loss, \
             self.infer_loss, self.train_prediction, self.infer_prediction], \
             feed_dict=feed_dict)
-        '''if self.used_loss == 'label':
-            self.current_train_prediction = self.__argmaxs(self.current_train_prediction)
-            self.current_infer_prediction = self.__argmaxs(self.current_infer_prediction)
-            self.current_infer_prediction = \
-                self.__fillWithEndTokens(self.current_infer_prediction)
-            self.current_infer_prediction = self.current_infer_prediction.astype(int)'''
-        self.current_train_accuracy = self.__calculateAccuracy( \
+        self.current_train_accuracy = self.calculateAccuracy( \
             self.current_train_prediction, groundtruth)
-        self.current_infer_accuracy = self.__calculateAccuracy( \
+        self.current_infer_accuracy = self.calculateAccuracy( \
             self.current_infer_prediction, groundtruth)
+
+    def testStep(self, inp):
+        feed_dict={self.input: inp, self.is_training:False, self.keep_prob:1.0}
+        self.current_infer_prediction = self.session.run(self.infer_prediction, \
+            feed_dict=feed_dict)
 
     def predict(self, wanted, inp):
         feed_dict={self.input: inp, self.is_training:False, self.keep_prob:1.0}
@@ -357,6 +368,10 @@ class Model:
             print(v.name + ' : ' + str(v.get_shape()) + ' : ' + str(np.mean(x)) + ' : ' \
                 + str(np.var(x)))
 
+    def printTrainableVariablesLight(self):
+        for v in tf.trainable_variables():
+            print(v.name + ' : ' + str(v.get_shape()))
+
     def printTrainableVariablesInScope(self, scope):
         for v in tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope):
             if v in tf.trainable_variables():
@@ -413,14 +428,11 @@ class Model:
 
     # indicates to fit the predicted label to the gold label as objective
     def __useLabelLoss(self):
-        self.used_loss = 'label'
         with tf.variable_scope("labelLoss", reuse=None):
             gt = tf.transpose(self.groundtruth)
             gt_train = gt[:tf.shape(self.train_energy)[1]]
             gt_train = tf.transpose(gt_train)
-            self.train_distribution = tf.nn.softmax(self.train_energy)
-            #
-            self.train_prediction = tf.argmax(self.train_distribution, axis=-1)
+            
             #diff = self.max_num_tokens - tf.shape(self.train_pred)[1]
             #self.prediction_greedy = tf.pad(self.train_pred, [[0,0],[0,diff]])
             eos_gt = tf.argmax(gt_train, 1)
@@ -434,8 +446,6 @@ class Model:
             #
             gt_infer = gt[:tf.shape(self.infer_energy)[1]]
             gt_infer = tf.transpose(gt_infer)
-            self.infer_distribution = tf.nn.softmax(self.infer_energy)
-            self.infer_prediction = tf.argmax(self.infer_distribution, axis=2)
             #diff = self.max_num_tokens - tf.shape(self.infer_pred)[1]
             #self.prediction_greedy = tf.pad(self.infer_pred, [[0,0],[0,diff]])
             eos_gt = tf.argmax(gt_infer, 1)
@@ -460,7 +470,6 @@ class Model:
 
     # indicates to fit the predicted classes to the gold classes as objective
     def __useClassesLoss(self):
-        self.used_loss = 'classes'
         with tf.variable_scope("classesLoss", reuse=None):
             #code.interact(local=dict(globals(), **locals()))
             loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.to_float( \
@@ -488,7 +497,7 @@ class Model:
                 __argmaxss[i][j] = np.argmax(distribution[i][j])
         return __argmaxss
 
-    def __calculateAccuracy(self, pred, gt):
+    def calculateAccuracy(self, pred, gt):
         accuracies = []
         for batch in range(gt.shape[0]):
             #print('|||||||||||||||||||||||||||||||||||||')
