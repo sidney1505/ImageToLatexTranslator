@@ -21,10 +21,10 @@ class Decoder():
             #    src_embed_size], dtype=tf.float32)            
             def embedding(x):
                 return tf.one_hot(x, src_vocab_size)
-            decodercell = self.createDecoderCell()
             projection_layer = layers_core.Dense(self.model.num_classes, use_bias=False)
 
             if not self.model.only_inference:
+                decodercell = self.createDecoderCell()
                 # using the train helper
                 nr_target = tf.argmax(self.model.groundtruth, axis=-1) + 1
                 nr_target = tf.to_int32(nr_target)
@@ -57,21 +57,40 @@ class Decoder():
                 self.model.infer_distribution = tf.nn.softmax(self.model.infer_energy)
                 self.model.infer_prediction = tf.argmax(self.model.infer_distribution, axis=2)
             else:
-                beamwidth = 5
-                self.batchsize = self.batchsize * beamwidth
-                self.model.refined_features = tf.contrib.seq2seq.tile_batch( \
-                    self.model.refined_features, beamwidth)
-                self.model.input_summary = tf.contrib.seq2seq.tile_batch( \
-                    self.model.input_summary, beamwidth)
-                decodercell = self.createDecoderCell()
-                infer_decoder = tf.contrib.seq2seq.BeamSearchDecoder(decodercell, embedding, \
-                    start_tokens, END_SYMBOL, self.initial_state, beamwidth, projection_layer)
-                infer_final_outputs, infer_final_state, infer_final_sequence_lengths = \
-                    tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
-                    maximum_iterations=self.model.max_num_tokens)
-                self.model.infer_prediction = tf.transpose(infer_final_outputs[0],[2,1,0])[0]
-                code.interact(local=dict(globals(), **locals()))
-                
+                beamsearch = True
+                beamwidth = 10
+                if not beamsearch:
+                    decodercell = self.createDecoderCell()
+                    # using the infer helper
+                    inferhelper = tf.contrib.seq2seq.GreedyEmbeddingHelper(embedding, \
+                        start_tokens, END_SYMBOL)
+                    infer_decoder = tf.contrib.seq2seq.BasicDecoder(decodercell, \
+                        inferhelper, self.initial_state, output_layer=projection_layer)
+                    #infer_decoder = tf.contrib.seq2seq.BeamSearchDecoder(decodercell, embedding, \
+                    #    start_tokens, END_SYMBOL, initial_state, 5, projection_layer)
+                    infer_final_outputs, infer_final_state, infer_final_sequence_lengths = \
+                        tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
+                        maximum_iterations=self.model.max_num_tokens)
+                    self.model.infer_energy = infer_final_outputs[0]
+                    self.model.infer_distribution = tf.nn.softmax(self.model.infer_energy)
+                    self.model.infer_prediction = tf.argmax(self.model.infer_distribution, axis=2)
+                else:
+                    self.batchsize = self.batchsize * beamwidth
+                    self.model.refined_features = tf.contrib.seq2seq.tile_batch( \
+                        self.model.refined_features, beamwidth)
+                    self.model.input_summary = tf.contrib.seq2seq.tile_batch( \
+                        self.model.input_summary, beamwidth)
+                    decodercell = self.createDecoderCell()
+                    infer_decoder = tf.contrib.seq2seq.BeamSearchDecoder(decodercell, embedding, \
+                        start_tokens, END_SYMBOL, self.initial_state, beamwidth, \
+                        projection_layer)
+                    infer_final_outputs, infer_final_state, infer_final_sequence_lengths = \
+                        tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
+                        maximum_iterations=self.model.max_num_tokens)
+                    self.model.top_k = tf.transpose(infer_final_outputs[0],[2,0,1])
+                    self.model.infer_prediction = self.model.top_k[0]
+                    # code.interact(local=dict(globals(), **locals()))
+
 
     def getFirstEndtokens(self, inp):
         l = []

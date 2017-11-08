@@ -20,6 +20,7 @@ from Encoders.QuadroEncoder import QuadroEncoder
 from Decoders.SimpleDecoder import SimpleDecoder
 from Decoders.SimplegruDecoder import SimplegruDecoder
 from Decoders.BahdanauDecoder import BahdanauDecoder
+from Decoders.BahdanauMonotonicDecoder import BahdanauMonotonicDecoder
 from Decoders.StackedBahdanauDecoder import StackedBahdanauDecoder
 from Decoders.LuongDecoder import LuongDecoder
 from Decoders.LuongMonotonicDecoder import LuongMonotonicDecoder
@@ -169,6 +170,8 @@ class Model:
                 SimplegruDecoder(self).createGraph()
             elif self.decoder == 'bahdanauDec':
                 BahdanauDecoder(self).createGraph()
+            elif self.decoder == 'monobahdanauDec':
+                BahdanauDecoder(self).createGraph()
             elif self.decoder == 'luongDec':
                 LuongDecoder(self).createGraph()
             elif self.decoder == 'monoluongDec':
@@ -275,6 +278,9 @@ class Model:
         feed_dict={self.input: inp, self.is_training:False, self.keep_prob:1.0}
         self.current_infer_prediction = self.session.run(self.infer_prediction, \
             feed_dict=feed_dict)
+        #top_k = self.session.run(self.top_k, feed_dict=feed_dict)
+        #print(top_k.shape)
+        #code.interact(local=dict(globals(), **locals()))
 
     def predict(self, wanted, inp):
         feed_dict={self.input: inp, self.is_training:False, self.keep_prob:1.0}
@@ -525,5 +531,8 @@ class Model:
                 #else:
                     #print('Miss ' + str(pred[batch][token]) + ' : ' +  str(gt[batch][token]))
                 # code.interact(local=dict(globals(), **locals()))
-            accuracies.append(float(matches) / float(count))
+            if count == 0:
+                accuracies.append(0.0)
+            else:
+                accuracies.append(float(matches) / float(count))
         return np.mean(accuracies)

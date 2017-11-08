@@ -27,18 +27,19 @@ class Trainer:
         assert os.path.exists(self.dataset_dir), \
             "Dataset directory doesn't exists!"
         self.tmp_dir = tmp_dir
-        self.capacity = capacity / 4
+        self.capacity = capacity
         # standart values for the hyperparameters
         self.mode = 'e2e'
         self.feature_extractor = 'wysiwygFe'
-        self.encoder = 'rowcolEnc'
-        self.decoder = 'stackedbahdanauDec'
+        self.encoder = 'quadroEnc'
+        self.decoder = 'bahdanauDec'
         self.encoder_size = 2048
         self.decoder_size = 512
         self.optimizer = 'momentum'
         self.min_epochs = 12
         self.max_epochs = 50
         self.initial_learning_rate = 0.1
+        self.lr_decay = 0.5
         # indicates whether and which preprocessed batches should be used
         self.preprocessing = ''
 
@@ -142,6 +143,7 @@ class Trainer:
         # the training loop
         train_last_loss = float('inf')
         val_last_loss = float('inf')
+        val_last_infer_loss = float('inf')
         while True:
             begin = time.time()
             train_loss, train_accuracy, infer_loss, infer_accuracy = \
@@ -174,17 +176,14 @@ class Trainer:
             if self.model.current_epoch >= self.max_epochs:
                 print('model training lasted to long!')
                 break
-            elif train_last_loss < train_loss or self.model.current_epoch % 3 == 0:
-                train_last_loss = train_loss
-                val_last_loss = val_loss
-                self.model.decayLearningRate(0.1)
-            elif val_last_loss > val_loss or self.model.current_epoch < self.min_epochs:
-                train_last_loss = train_loss
-                val_last_loss = val_loss
-            else:
+            elif val_last_loss < val_loss and self.model.current_epoch > self.min_epochs:
                 print('model starts to overfit!')
-                # code.interact(local=dict(globals(), **locals()))
                 break
+            elif val_last_infer_loss < val_infer_loss: # or self.model.current_epoch % 3 == 0:
+                self.model.decayLearningRate(self.lr_decay)
+            val_last_infer_loss = val_infer_loss
+            train_last_loss = train_loss
+            val_last_loss = val_loss
 
     def __iterateOneEpoch(self, phase):
         if self.model.used_loss == 'classes':
@@ -236,11 +235,11 @@ class Trainer:
                     self.model.valStep(minibatch_images, minigroundtruth)
                 if phase == 'test':
                     self.model.testStep(minibatch_images)
-                    self.model.current_infer_accuracy = self.model.calculateAccuracy( \
-                        self.model.current_infer_prediction, minigroundtruth)
                     self.model.current_train_loss = 0
                     self.model.current_train_accuracy = 0
                     self.model.current_infer_loss = 0
+                    self.model.current_infer_accuracy = self.model.calculateAccuracy( \
+                        self.model.current_infer_prediction, minigroundtruth)
                 train_losses.append(self.model.current_train_loss)
                 train_accuracies.append(self.model.current_train_accuracy)
                 print(str(self.model.current_train_loss) + ' : ' + \
@@ -459,14 +458,14 @@ class Trainer:
         final_accuracy_writer.write(str(test_infer_accuracy))
         final_accuracy_writer.close()
         final_val_accuracy_reader = open(self.model.model_dir + \
-            '/params/val_token_accuracy/epoch' + str(self.model.current_epoch),'r')
+            '/params/val_token_accuracy/epoch' + str(self.model.current_epoch - 1),'r')
         val_infer_accuracy = float(final_val_accuracy_reader.read())
         final_val_accuracy_reader.close()
         final_val_accuracy_writer = open(self.model.model_dir + '/final_val_accuracy','w')
         final_val_accuracy_writer.write(str(val_infer_accuracy))
         final_val_accuracy_writer.close()
         val_result_path = self.model.model_dir + '/params/val_results/epoch' + \
-            str(self.model.current_epoch)
+            str(self.model.current_epoch - 1)
         val_text_edit_distance = self.calculateEditDistance(val_result_path)
         val_ted_writer = open(self.model.model_dir + '/val_text_edit_distance','w')
         val_ted_writer.write(str(val_text_edit_distance))
