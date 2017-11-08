@@ -171,7 +171,7 @@ class Model:
             elif self.decoder == 'bahdanauDec':
                 BahdanauDecoder(self).createGraph()
             elif self.decoder == 'monobahdanauDec':
-                BahdanauDecoder(self).createGraph()
+                BahdanauMonotonicDecoder(self).createGraph()
             elif self.decoder == 'luongDec':
                 LuongDecoder(self).createGraph()
             elif self.decoder == 'monoluongDec':
