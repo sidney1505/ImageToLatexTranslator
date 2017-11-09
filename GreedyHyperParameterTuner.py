@@ -97,7 +97,7 @@ class GreedyHyperparamterTuner:
 def main(args):
     print('enter main method')
     trainer = Trainer.Trainer(os.environ['BASE_MODEL_DIR'], os.environ['DATA_DIR'],\
-        os.environ['TMP_DIR'], 1000000)
+        os.environ['TMP_DIR'], 250000)
     #sess = tf.Session()
     #print('greedy hyper parameter main')
     ght = GreedyHyperparamterTuner()

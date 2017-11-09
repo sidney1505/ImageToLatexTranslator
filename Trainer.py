@@ -27,7 +27,7 @@ class Trainer:
         assert os.path.exists(self.dataset_dir), \
             "Dataset directory doesn't exists!"
         self.tmp_dir = tmp_dir
-        self.capacity = capacity
+        self.capacity = capacity / 4
         # standart values for the hyperparameters
         self.mode = 'e2e'
         self.feature_extractor = 'wysiwygFe'
@@ -454,26 +454,36 @@ class Trainer:
             self.__iterateOneEpoch('test')
         print('model testing is finished!')
         # code.interact(local=dict(globals(), **locals()))
-        final_accuracy_writer = open(self.model.model_dir + '/final_test_accuracy','w')
-        final_accuracy_writer.write(str(test_infer_accuracy))
-        final_accuracy_writer.close()
-        final_val_accuracy_reader = open(self.model.model_dir + \
-            '/params/val_token_accuracy/epoch' + str(self.model.current_epoch - 1),'r')
+
+    def evaluateModelOld(self, model_dir='', epoch=None):
+        if model_dir == '':
+            model_dir = self.model.model_dir
+        if epoch == None:
+            epoch = self.model.current_epoch
+        final_val_accuracy_reader = open(model_dir + \
+            '/params/val_token_accuracy/epoch' + str(epoch - 1),'r')
         val_infer_accuracy = float(final_val_accuracy_reader.read())
         final_val_accuracy_reader.close()
-        final_val_accuracy_writer = open(self.model.model_dir + '/final_val_accuracy','w')
+        final_val_accuracy_writer = open(model_dir + '/final_val_accuracy','w')
         final_val_accuracy_writer.write(str(val_infer_accuracy))
         final_val_accuracy_writer.close()
-        val_result_path = self.model.model_dir + '/params/val_results/epoch' + \
-            str(self.model.current_epoch - 1)
+        val_result_path = model_dir + '/params/val_results/epoch' + \
+            str(epoch - 1)
         val_text_edit_distance = self.calculateEditDistance(val_result_path)
-        val_ted_writer = open(self.model.model_dir + '/val_text_edit_distance','w')
+        val_ted_writer = open(model_dir + '/val_text_edit_distance','w')
         val_ted_writer.write(str(val_text_edit_distance))
         val_ted_writer.close()
-        test_result_path = self.model.model_dir + '/params/test_results/epoch' + \
-            str(self.model.current_epoch)
+        final_test_accuracy_reader = open(model_dir + \
+            '/params/test_token_accuracy/epoch' + str(epoch),'r')
+        test_infer_accuracy = float(final_test_accuracy_reader.read())
+        final_test_accuracy_reader.close()
+        final_accuracy_writer = open(model_dir + '/final_test_accuracy','w')
+        final_accuracy_writer.write(str(test_infer_accuracy))
+        final_accuracy_writer.close()
+        test_result_path = model_dir + '/params/test_results/epoch' + \
+            str(epoch)
         test_text_edit_distance = self.calculateEditDistance(test_result_path)
-        test_ted_writer = open(self.model.model_dir + '/test_text_edit_distance','w')
+        test_ted_writer = open(model_dir + '/test_text_edit_distance','w')
         test_ted_writer.write(str(test_text_edit_distance))
         test_ted_writer.close()
         if self.preprocessing == '':
@@ -491,9 +501,73 @@ class Trainer:
         path = self.tmp_dir + '/' + self.preprocessing + self.model.getTrainMode() + '_' \
             + self.mode
         best_model_writer = open(path,'w')
-        best_model_writer.write(self.model.model_dir)
+        best_model_writer.write(model_dir)
         best_model_writer.close()
         return val_infer_accuracy
+
+    def evaluateModel(self, model_dir=''):
+        if model_dir == '':
+            model_dir = self.model.model_dir
+            epoch = self.model.current_epoch
+        else:
+            epoch = int(self.readLog(model_dir + '/params/current_epoch'))
+        # token wise accuracies
+        val_token_acc = self.readLog(model_dir + '/params/val_token_accuracy/epoch' + \
+            str(epoch - 1))
+        self.writeLog(model_dir + '/final_val_token_acc', val_token_acc)
+        test_token_acc = self.readLog(model_dir + '/params/test_token_accuracy/epoch' + \
+            str(epoch))
+        self.writeLog(model_dir + '/final_test_token_acc', test_token_acc)
+        # absolute accuracies
+        val_abs_acc = self.readLog(model_dir + '/params/val_absolute_accuracy/epoch' + \
+            str(epoch - 1))
+        self.writeLog(model_dir + '/final_val_abs_acc', val_abs_acc)
+        test_abs_acc = self.readLog(model_dir + \
+            '/params/test_absolute_accuracy/epoch' + str(epoch))
+        self.writeLog(model_dir + '/final_test_abs_acc', test_abs_acc)
+        # define the result paths
+        val_result_path = model_dir + '/params/val_results/epoch' + str(epoch - 1)
+        test_result_path = model_dir + '/params/test_results/epoch' + str(epoch)
+        # text edit distance accuracies
+        val_text_edit_distance = self.calculateEditDistance(val_result_path)
+        self.writeLog(model_dir + '/val_text_edit_distance', val_text_edit_distance)
+        test_text_edit_distance = self.calculateEditDistance(test_result_path)
+        self.writeLog(model_dir + '/test_text_edit_distance', test_text_edit_distance)
+        #
+
+        # define which model to keep in the best model directory
+        feature_extractor = self.readLog(model_dir + '/params/feature_extractor')
+        #if self.preprocessing != '':
+        #    fe = self.preprocessing[:-1]
+        encoder = self.readLog(model_dir + '/params/encoder')
+        decoder = self.readLog(model_dir + '/params/decoder')
+        encoder_size = self.readLog(model_dir + '/params/encoder_size')
+        decoder_size = self.readLog(model_dir + '/params/decoder_size')
+        optimizer = self.readLog(model_dir + '/params/optimizer')
+        best_model_path = self.__findBestModel(feature_extractor, encoder, \
+            decoder, encoder_size, optimizer)
+        if best_model_path != None:
+            best_val_text_edit_distance = \
+                float(self.readLog(best_model_path+'/val_text_edit_distance'))
+            if val_text_edit_distance < best_val_text_edit_distance:
+                return val_text_edit_distance
+        #path = self.tmp_dir + '/' + self.preprocessing + self.model.getTrainMode() + '_' \
+        #    + self.mode
+        path = self.tmp_dir + '/' + feature_extractor + '_' + encoder + '_' + decoder + '_' +\
+            encoder_size + '_' + decoder_size + '_' + optimizer
+        self.writeLog(path, model_dir)
+        return val_text_edit_distance
+
+    def readLog(self, path):
+        reader = open(path,'r')
+        value = reader.read()
+        reader.close()
+        return value
+
+    def writeLog(self, path, value):
+        writer = open(path,'w')
+        value = writer.write(str(value))
+        writer.close()
 
     def calculateEditDistance(self, result_file):
         total_ref = 0
@@ -579,6 +653,7 @@ class Trainer:
         while image.shape[0] * image.shape[1] * image.shape[2] * minibatchsize > \
                 self.model.capacity:
             minibatchsize = minibatchsize - 1
+        # code.interact(local=dict(globals(), **locals()))
         return minibatchsize
 
     def __createMinibatch(self, batch_data, minibatch_it, minibatchsize):

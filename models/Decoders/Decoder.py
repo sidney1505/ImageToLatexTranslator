@@ -58,7 +58,7 @@ class Decoder():
                 self.model.infer_prediction = tf.argmax(self.model.infer_distribution, axis=2)
             else:
                 beamsearch = True
-                beamwidth = 10
+                beamwidth = 5
                 if not beamsearch:
                     decodercell = self.createDecoderCell()
                     # using the infer helper
@@ -66,8 +66,6 @@ class Decoder():
                         start_tokens, END_SYMBOL)
                     infer_decoder = tf.contrib.seq2seq.BasicDecoder(decodercell, \
                         inferhelper, self.initial_state, output_layer=projection_layer)
-                    #infer_decoder = tf.contrib.seq2seq.BeamSearchDecoder(decodercell, embedding, \
-                    #    start_tokens, END_SYMBOL, initial_state, 5, projection_layer)
                     infer_final_outputs, infer_final_state, infer_final_sequence_lengths = \
                         tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
                         maximum_iterations=self.model.max_num_tokens)
