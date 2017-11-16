@@ -14,6 +14,9 @@ import tflearn
 from tflearn.layers.core import input_data, dropout, fully_connected
 from tflearn.layers.conv import conv_2d, max_pool_2d
 from tflearn.layers.estimator import regression
+# own packages
+import myutils.render_output as my_renderer
+import myutils.ImageEditDistanceCalculator as iedc
 from models.ModelFactory import Model
 import models.ModelFactory
 
@@ -30,13 +33,13 @@ class Trainer:
         self.capacity = capacity / 4
         # standart values for the hyperparameters
         self.mode = 'e2e'
-        self.feature_extractor = 'wysiwygFe'
+        self.feature_extractor = 'vggFe'
         self.encoder = 'quadroEnc'
-        self.decoder = 'stackedbahdanauDec'
+        self.decoder = 'stackedluongDec'
         self.encoder_size = 2048
         self.decoder_size = 512
         self.optimizer = 'momentum'
-        self.min_epochs = 12
+        self.min_epochs = 6
         self.max_epochs = 50
         self.initial_learning_rate = 0.1
         self.lr_decay = 0.5
@@ -455,55 +458,18 @@ class Trainer:
         print('model testing is finished!')
         # code.interact(local=dict(globals(), **locals()))
 
-    def evaluateModelOld(self, model_dir='', epoch=None):
+    def renderImages(self, model_dir=''):
         if model_dir == '':
             model_dir = self.model.model_dir
-        if epoch == None:
             epoch = self.model.current_epoch
-        final_val_accuracy_reader = open(model_dir + \
-            '/params/val_token_accuracy/epoch' + str(epoch - 1),'r')
-        val_infer_accuracy = float(final_val_accuracy_reader.read())
-        final_val_accuracy_reader.close()
-        final_val_accuracy_writer = open(model_dir + '/final_val_accuracy','w')
-        final_val_accuracy_writer.write(str(val_infer_accuracy))
-        final_val_accuracy_writer.close()
-        val_result_path = model_dir + '/params/val_results/epoch' + \
-            str(epoch - 1)
-        val_text_edit_distance = self.calculateEditDistance(val_result_path)
-        val_ted_writer = open(model_dir + '/val_text_edit_distance','w')
-        val_ted_writer.write(str(val_text_edit_distance))
-        val_ted_writer.close()
-        final_test_accuracy_reader = open(model_dir + \
-            '/params/test_token_accuracy/epoch' + str(epoch),'r')
-        test_infer_accuracy = float(final_test_accuracy_reader.read())
-        final_test_accuracy_reader.close()
-        final_accuracy_writer = open(model_dir + '/final_test_accuracy','w')
-        final_accuracy_writer.write(str(test_infer_accuracy))
-        final_accuracy_writer.close()
-        test_result_path = model_dir + '/params/test_results/epoch' + \
-            str(epoch)
-        test_text_edit_distance = self.calculateEditDistance(test_result_path)
-        test_ted_writer = open(model_dir + '/test_text_edit_distance','w')
-        test_ted_writer.write(str(test_text_edit_distance))
-        test_ted_writer.close()
-        if self.preprocessing == '':
-            fe = self.feature_extractor
         else:
-            fe = self.preprocessing[:-1]
-        best_model_path = self.__findBestModel(fe, self.encoder, \
-            self.decoder, self.encoder_size, self.optimizer)
-        if best_model_path != None:
-            best_model_reader = open(best_model_path + '/final_val_accuracy','r')
-            best_final_accuracy = float(best_model_reader.read())
-            best_model_reader.close()
-            if val_infer_accuracy < best_final_accuracy:
-                return val_infer_accuracy
-        path = self.tmp_dir + '/' + self.preprocessing + self.model.getTrainMode() + '_' \
-            + self.mode
-        best_model_writer = open(path,'w')
-        best_model_writer.write(model_dir)
-        best_model_writer.close()
-        return val_infer_accuracy
+            epoch = int(self.readLog(model_dir + '/params/current_epoch'))
+        val_result_path = model_dir + '/params/val_results/epoch' + str(epoch - 1)
+        test_result_path = model_dir + '/params/test_results/epoch' + str(epoch)
+        # calculate image edit distance
+        my_renderer.render_output(val_result_path)
+        my_renderer.render_output(test_result_path)
+
 
     def evaluateModel(self, model_dir=''):
         if model_dir == '':
@@ -533,8 +499,19 @@ class Trainer:
         self.writeLog(model_dir + '/val_text_edit_distance', val_text_edit_distance)
         test_text_edit_distance = self.calculateEditDistance(test_result_path)
         self.writeLog(model_dir + '/test_text_edit_distance', test_text_edit_distance)
-        #
-
+        # acalculate the image edit distance
+        try:
+            val_image_edit_distance = iedc.calcImageEditDistance(model_dir + \
+                '/params/val_rendered_images')
+            self.writeLog(model_dir + '/val_image_edit_distance', val_image_edit_distance)
+        finally:
+            pass
+        try:
+            test_image_edit_distance = iedc.calcImageEditDistance(model_dir + \
+                'params/test_rendered_images')
+            self.writeLog(model_dir + '/test_image_edit_distance', test_image_edit_distance)
+        finally:
+            pass
         # define which model to keep in the best model directory
         feature_extractor = self.readLog(model_dir + '/params/feature_extractor')
         #if self.preprocessing != '':
@@ -835,7 +812,7 @@ class Trainer:
         plt.title('length of the labels')
         plt.savefig(self.dataset_dir + '/label_length_stats.png')
         plt.close()
-        code.interact(local=dict(globals(), **locals()))
+        #code.interact(local=dict(globals(), **locals()))
 
 
 

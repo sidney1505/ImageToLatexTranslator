@@ -1,11 +1,9 @@
--> absolute accuracies zum validieren vergleichen!
--> geladene modelle wieder trainierbar machen
--> BeamSearchDecoder zum laufen bringen
+-> metriken verallgemeinern
+-> stacked encoder
 -> confusion matrix bei testdurchläufen
-
-4. Evaluation
-* classification netze vergleich: vgg....
-* training des RNN mit fixen features (ohne attention)
-* end to end
-* attention module
-* confusion matrix der captions
+-> fehler nach länge gruppieren
+-> attention maps extrahieren
+-> crf's???
+-> bounding boxes zur gt hizufügen
+-> attention quantitativ evaluieren
+-> supervised attention

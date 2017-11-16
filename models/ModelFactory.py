@@ -5,6 +5,7 @@ import numpy as np
 from FeatureExtractors.WYSIWYGFeatureExtractor import WYSIWYGFeatureExtractor
 from FeatureExtractors.AlexnetFeatureExtractor import AlexnetFeatureExtractor
 from FeatureExtractors.VGGFeatureExtractor import VGGFeatureExtractor
+from FeatureExtractors.VGGFinegrainedFeatureExtractor import VGGFinegrainedFeatureExtractor
 from FeatureExtractors.ResnetFeatureExtractor import ResnetFeatureExtractor
 from FeatureExtractors.DensenetFeatureExtractor import DensenetFeatureExtractor
 # import classifiers
@@ -125,6 +126,8 @@ class Model:
                 self.features = AlexnetFeatureExtractor(self).createGraph()
             elif self.feature_extractor == 'vggFe':
                 self.features = VGGFeatureExtractor(self).createGraph()
+            elif self.feature_extractor == 'vggfFe':
+                self.features = VGGFinegrainedFeatureExtractor(self).createGraph()
             elif self.feature_extractor == 'resnetFe':
                 self.features = ResnetFeatureExtractor(self).createGraph()
             elif self.feature_extractor == 'densenetFe':
@@ -198,6 +201,7 @@ class Model:
         # creates the optimizer
         # create the save path
         self.save_path = self.model_dir + '/weights.ckpt'
+        self.best_path = self.model_dir + '/best.ckpt'
         self.seed_path = self.model_dir + '/seeds.ckpt'
         # initialises all variables
         if not loaded:
@@ -308,6 +312,24 @@ class Model:
         print('#############################################################')
         print('#############################################################')
         print('###                     Model saved!                      ###')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+
+    def save(self):
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        print('###                 Save best model!                      ###')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        saver = tf.train.Saver()
+        saver.save(self.session, self.best_path)
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        print('###                 Best Model saved!                     ###')
         print('#############################################################')
         print('#############################################################')
         print('#############################################################')
