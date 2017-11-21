@@ -124,6 +124,75 @@ class Encoder:
             rowstates = tf.reshape(rowstates, [2, batchsize, 2 * self.channels])
             self.row_summary = tf.contrib.rnn.LSTMStateTuple(rowstates[0], rowstates[1])
 
+    def encodeRowsBidirectionalStacked(self, number_of_layers):
+        with tf.variable_scope(self.model.encoder + '_rows', reuse=None):
+            shape = tf.shape(self.model.features)
+            batchsize = shape[0]
+            height = shape[1]
+            width = shape[2]
+            num_features = self.model.features.shape[3].value
+            # rows            
+            rowfeatures = tf.reshape(self.model.features, [batchsize * height, width, \
+                num_features])
+            # create the postional row embeddings
+            
+            initial_state_rows = tf.range(height)
+            initial_state_rows = tf.expand_dims(initial_state_rows, 0)
+            initial_state_rows = tf.tile(initial_state_rows, [self.channels, 1])
+
+            initial_state_rows = tf.transpose(initial_state_rows) # WxC
+            initial_state_rows = tf.expand_dims(initial_state_rows, 0)# 1xWxC
+            initial_state_rows = tf.tile(initial_state_rows, [batchsize, 1, 1]) # BxWxC
+                                    
+            initial_state_rows = tf.reshape(initial_state_rows, [batchsize*height, \
+                self.channels])
+            initial_state_rows = tf.cast(initial_state_rows, tf.float32)
+            initial_state_rows = tf.contrib.rnn.LSTMStateTuple(initial_state_rows, \
+                initial_state_rows)
+            # run the actual row encoding lstm
+            #code.interact(local=dict(globals(), **locals()))
+            def createMulticell():
+                cells = []
+                initial_states = []
+                for i in range(number_of_layers):
+                    cells.append(tf.contrib.rnn.BasicLSTMCell(self.channels))
+                    initial_states.append(initial_state_rows)
+                initial_states = tuple(initial_states)
+                multicell = tf.contrib.rnn.MultiRNNCell(cells)
+                return multicell, initial_states
+            rowrnncell_fw, initial_state_rows = createMulticell()
+            rowrnncell_bw, _ = createMulticell()
+            rowfeatures, rowstates = tf.nn.bidirectional_dynamic_rnn(rowrnncell_fw, \
+                rowrnncell_bw, rowfeatures, initial_state_fw=initial_state_rows, \
+                initial_state_bw=initial_state_rows, parallel_iterations=1)
+            rowfeatures = tf.concat([rowfeatures[0],rowfeatures[1]],-1)
+            nrowstates = []
+            w1 = tf.get_variable('weight', [4 * self.channels, 2 * self.channels], \
+                    tf.float32, tf.random_normal_initializer())
+            b1 = tf.get_variable('bias', [2 * self.channels], tf.float32, \
+                    tf.random_normal_initializer())
+            for i in range(number_of_layers):
+                s = tf.concat([rowstates[i][0][0],rowstates[i][0][1],rowstates[i][1][0],\
+                    rowstates[i][1][1]],-1)
+                s = tf.tensordot(s,w1,[[-1],[0]]) + b1
+                s = tf.nn.tanh(s)
+                s = tf.nn.dropout(s,self.model.keep_prob)
+                nrowstates.append(s)
+            rowstates = nrowstates
+            # code.interact(local=dict(globals(), **locals()))
+
+        with tf.variable_scope(self.model.encoder + '_rows2', reuse=None):
+            # 
+            rowstaternncell = tf.contrib.rnn.BasicLSTMCell(2 * self.channels)
+            # use trick with batches
+            _, rowstates = tf.nn.dynamic_rnn(rowstaternncell, rowstates, \
+                dtype=tf.float32, parallel_iterations=1)
+            row_summary = []
+            for i in range(number_of_layers):
+                r = tf.reshape(rowstates, [2, batchsize, 2 * self.channels])
+                row_summary.append(tf.contrib.rnn.LSTMStateTuple(r[0], r[1]))
+            self.row_summary = row_summary
+
 
     def encodeCols(self):
         with tf.variable_scope(self.model.encoder + '_cols', reuse=None):

@@ -35,14 +35,14 @@ class Trainer:
         self.mode = 'e2e'
         self.feature_extractor = 'vggFe'
         self.encoder = 'quadroEnc'
-        self.decoder = 'stackedluongDec'
+        self.decoder = 'stackedbahdanauDec'
         self.encoder_size = 2048
         self.decoder_size = 512
         self.optimizer = 'momentum'
         self.min_epochs = 6
         self.max_epochs = 50
         self.initial_learning_rate = 0.1
-        self.lr_decay = 0.5
+        self.lr_decay = 0.1
         # indicates whether and which preprocessed batches should be used
         self.preprocessing = ''
 
@@ -458,27 +458,19 @@ class Trainer:
         print('model testing is finished!')
         # code.interact(local=dict(globals(), **locals()))
 
-    def renderImages(self, model_dir=''):
+
+    def evaluateModel(self, model_dir='', phase = 'test'):
         if model_dir == '':
             model_dir = self.model.model_dir
             epoch = self.model.current_epoch
         else:
             epoch = int(self.readLog(model_dir + '/params/current_epoch'))
-        val_result_path = model_dir + '/params/val_results/epoch' + str(epoch - 1)
-        test_result_path = model_dir + '/params/test_results/epoch' + str(epoch)
-        # calculate image edit distance
-        my_renderer.render_output(val_result_path)
-        my_renderer.render_output(test_result_path)
-
-
-    def evaluateModel(self, model_dir=''):
-        if model_dir == '':
-            model_dir = self.model.model_dir
-            epoch = self.model.current_epoch
-        else:
-            epoch = int(self.readLog(model_dir + '/params/current_epoch'))
+        if phase == 'val':
+            epoch = epoch - 1
         # token wise accuracies
-        val_token_acc = self.readLog(model_dir + '/params/val_token_accuracy/epoch' + \
+        result_path = model_dir + '/params/'+phase+'_results/epoch' + str(epoch)
+        #
+        val_token_acc = self.readLog(model_dir + '/params/'+phase+'_token_accuracy/epoch' + \
             str(epoch - 1))
         self.writeLog(model_dir + '/final_val_token_acc', val_token_acc)
         test_token_acc = self.readLog(model_dir + '/params/test_token_accuracy/epoch' + \
@@ -492,7 +484,6 @@ class Trainer:
             '/params/test_absolute_accuracy/epoch' + str(epoch))
         self.writeLog(model_dir + '/final_test_abs_acc', test_abs_acc)
         # define the result paths
-        val_result_path = model_dir + '/params/val_results/epoch' + str(epoch - 1)
         test_result_path = model_dir + '/params/test_results/epoch' + str(epoch)
         # text edit distance accuracies
         val_text_edit_distance = self.calculateEditDistance(val_result_path)
@@ -501,13 +492,13 @@ class Trainer:
         self.writeLog(model_dir + '/test_text_edit_distance', test_text_edit_distance)
         # acalculate the image edit distance
         try:
-            val_image_edit_distance = iedc.calcImageEditDistance(model_dir + \
+            val_image_edit_distance,_ = iedc.calcImageEditDistance(model_dir + \
                 '/params/val_rendered_images')
             self.writeLog(model_dir + '/val_image_edit_distance', val_image_edit_distance)
         finally:
             pass
         try:
-            test_image_edit_distance = iedc.calcImageEditDistance(model_dir + \
+            test_image_edit_distance,_ = iedc.calcImageEditDistance(model_dir + \
                 'params/test_rendered_images')
             self.writeLog(model_dir + '/test_image_edit_distance', test_image_edit_distance)
         finally:
@@ -517,6 +508,22 @@ class Trainer:
         #if self.preprocessing != '':
         #    fe = self.preprocessing[:-1]
         encoder = self.readLog(model_dir + '/params/encoder')
+
+    def renderImages(self, model_dir='', phase='test'):
+        if model_dir == '':
+            model_dir = self.model.model_dir
+            epoch = self.model.current_epoch
+        else:
+            epoch = int(self.readLog(model_dir + '/params/current_epoch'))
+        if phase == 'val':
+            epoch = epoch - 1
+        result_path = model_dir + '/params/'+ phase + '_results/epoch' + str(epoch)
+        self.renderOutput(result_path)
+
+    def renderOutput(self, result_path):
+        my_renderer.render_output(result_path)
+
+    def evaluate(self):
         decoder = self.readLog(model_dir + '/params/decoder')
         encoder_size = self.readLog(model_dir + '/params/encoder_size')
         decoder_size = self.readLog(model_dir + '/params/decoder_size')
@@ -534,6 +541,24 @@ class Trainer:
             encoder_size + '_' + decoder_size + '_' + optimizer
         self.writeLog(path, model_dir)
         return val_text_edit_distance
+
+    def evaluateFormulas(self, model_dir, result_path):
+        token_accuracy = self.calculateTokenAccuracy(result_path)
+        print('token accuracy: ' + str(token_accuracy))
+        self.writeLog(model_dir + '/token_accuracy', token_accuracy)
+        abs_accuracy = self.calculateAbsoluteAccuracy(result_path)
+        print('absolute accuracy: ' + str(abs_accuracy))
+        self.writeLog(model_dir + '/abs_accuracy', abs_accuracy)
+        text_edit_distance = self.calculateEditDistance(result_path)
+        print('text edit distance: ' + str(text_edit_distance))
+        self.writeLog(model_dir + '/val_text_edit_distance', val_text_edit_distance)
+
+    def evaluateImages(self, model_dir, img_dir):
+        image_edit_distance, image_accuracy = iedc.calcImageEditDistance(img_dir)
+        print('image edit distance: ' + str(image_edit_distance))
+        print('image accuracy: ' + str(image_accuracy))
+        self.writeLog(model_dir + '/image_edit_distance', image_edit_distance)
+        self.writeLog(model_dir + '/image_accuracy', image_accuracy)
 
     def readLog(self, path):
         reader = open(path,'r')

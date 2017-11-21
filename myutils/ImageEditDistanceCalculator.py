@@ -21,51 +21,52 @@ def calcImageEditDistance(images_dir):
     console.setFormatter(formatter)
     logging.getLogger('').addHandler(console)
 
-    logging.info('Script being executed: %s'%__file__)
+    print('Script being executed: %s'%__file__)
     gold_dir = os.path.join(images_dir, 'images_gold')
     pred_dir = os.path.join(images_dir, 'images_pred')
     assert os.path.exists(gold_dir), gold_dir 
     assert os.path.exists(pred_dir), pred_dir 
-    total_edit_distance = 0
-    total_ref = 0
-    total_num = 0
-    total_correct = 0
-    total_correct_eliminate = 0
+    total_image_edit_distance = 0
+    total_image_ref = 0
+    total_image_num = 0
+    total_image_correct = 0
+    total_image_correct_eliminate = 0
     filenames = glob.glob(os.path.join(gold_dir, '*'))
     for filename in filenames:
         filename2 = os.path.join(pred_dir, os.path.basename(filename))
         edit_distance, ref, match1, match2 = img_edit_distance_file(filename, filename2)
-        total_edit_distance += edit_distance
-        total_ref += ref
-        total_num += 1
+        total_image_image_edit_distance += edit_distance
+        total_image_ref += ref
+        total_image_num += 1
         if match1:
-            total_correct += 1
+            total_image_correct += 1
         if match2:
-            total_correct_eliminate += 1
-        if total_num % 100 == 0:
-            logging.info ('Total Num: %d'%total_num)
-            logging.info ('Accuracy (w spaces): %f'%(float(total_correct)/total_num))
-            logging.info ('Accuracy (w/o spaces): %f'%(float(total_correct_eliminate)/total_num))
-            logging.info ('Edit Dist (w spaces): %f'%(1.-float(total_edit_distance)/total_ref))
-            logging.info ('Total Correct (w spaces): %d'%total_correct)
-            logging.info ('Total Correct (w/o spaces): %d'%total_correct_eliminate)
-            logging.info ('Total Edit Dist (w spaces): %d'%total_edit_distance)
-            logging.info ('Total Ref (w spaces): %d'%total_ref)
-            logging.info ('')
+            total_image_correct_eliminate += 1
+        if total_image_num % 100 == 0:
+            print('Total Num: %d'%total_image_num)
+            print('Accuracy (w spaces): %f'%(float(total_image_correct)/total_image_num))
+            print('Accuracy (w/o spaces): %f'%(float(total_image_correct_eliminate)/total_image_num))
+            print('Edit Dist (w spaces): %f'%(1.-float(total_image_image_edit_distance)/total_image_ref))
+            print('Total Correct (w spaces): %d'%total_image_correct)
+            print('Total Correct (w/o spaces): %d'%total_image_correct_eliminate)
+            print('Total Edit Dist (w spaces): %d'%total_image_image_edit_distance)
+            print('Total Ref (w spaces): %d'%total_image_ref)
+            print('')
 
-    accuracy = float(total_correct)/total_num)
-    accuracy_nw = float(total_correct_eliminate)/total_num)
-    logging.info ('------------------------------------')
-    logging.info ('Final')
-    logging.info ('Total Num: %d'%total_num)
-    logging.info ('Accuracy (w spaces): %f'%(accuracy)
-    logging.info ('Accuracy (w/o spaces): %f'%(accuracy_nw)
-    logging.info ('Edit Dist (w spaces): %f'%(1.-float(total_edit_distance)/total_ref))
-    logging.info ('Total Correct (w spaces): %d'%total_correct)
-    logging.info ('Total Correct (w/o spaces): %d'%total_correct_eliminate)
-    logging.info ('Total Edit Dist (w spaces): %d'%total_edit_distance)
-    logging.info ('Total Ref (w spaces): %d'%total_ref)
-    return accuracy_nw
+    image_edit_distance = (1.-float(total_image_image_edit_distance)/total_image_ref)
+    accuracy = float(total_image_correct)/total_image_num
+    accuracy_nw = float(total_image_correct_eliminate)/total_image_num
+    print('------------------------------------')
+    print('Final')
+    print('Total Num: %d'%total_image_num)
+    print('Accuracy (w spaces): %f'%(accuracy))
+    print('Accuracy (w/o spaces): %f'%(accuracy_nw))
+    print('Edit Dist (w spaces): %f'%image_edit_distance)
+    print('Total Correct (w spaces): %d'%total_image_correct)
+    print('Total Correct (w/o spaces): %d'%total_image_correct_eliminate)
+    print('Total Edit Dist (w spaces): %d'%total_image_image_edit_distance)
+    print('Total Ref (w spaces): %d'%total_image_ref)
+    return image_edit_distance, accuracy_nw
 
 # return (edit_distance, ref, match, match w/o)
 def img_edit_distance(im1, im2, out_path=None):

@@ -7,7 +7,7 @@ class StackedBahdanauDecoder(Decoder):
         Decoder.__init__(self, model)
 
     def createDecoderCell(self):
-        number_of_layers = 2
+        number_of_layers = 4
         cells = [tf.contrib.rnn.BasicLSTMCell(self.model.encoder_size)]
         initial_states = [self.model.input_summary]
         for i in range(number_of_layers - 1):

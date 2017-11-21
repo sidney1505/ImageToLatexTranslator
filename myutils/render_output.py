@@ -23,10 +23,8 @@ template = r"""
 \end{document}
 """
 
-def render_output(result_path):
+def render_output(result_path, output_dir):
     assert os.path.exists(result_path), result_path
-    phase = result_path.split('/')[-2].split('_')[0]
-    output_dir = '/'.join(result_path.split('/')[:-2]) + '/' + phase + '_rendered_images'
     replace = True
     num_threads = 1
     # create directories
@@ -51,9 +49,9 @@ def render_output(result_path):
                 pass
             finally:
                 pass
-    print('Creating pool with %d threads'%num_threads)
+    # print('Creating pool with %d threads'%num_threads)
     # pool = ThreadPool(num_threads)
-    print('Jobs running...')
+    # print('Jobs running...')
     # results = pool.map(main_parallel, lines)
     # pool.close() 
     # pool.join()
@@ -152,3 +150,15 @@ def main_parallel(line):
     if i % 10 == 0:
         print(i)
     i = i + 1
+
+def main():
+    print('enter main method')
+    result_path = '/cvhci/data/docs/math_expr/printed/im2latex-100k/models/' + \
+        'final_models_torch/old/wysiwyg/results/results.txt'
+    image_dir = '/cvhci/data/docs/math_expr/printed/im2latex-100k/models/' + \
+        'final_models_torch/old/wysiwyg/rendered'
+    render_output(result_path, image_dir)
+    #code.interact(local=dict(globals(), **locals()))
+
+if __name__ == '__main__':
+    main()
