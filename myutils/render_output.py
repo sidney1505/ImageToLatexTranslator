@@ -1,4 +1,4 @@
-import sys, os, re, shutil, argparse, logging
+import sys, os, re, shutil, argparse, logging, code
 sys.path.insert(0, '%s'%os.path.join(os.path.dirname(__file__), '../utils/'))
 from runner import run
 from image_utils import *
@@ -23,7 +23,7 @@ template = r"""
 \end{document}
 """
 
-def render_output(result_path, output_dir):
+def render_output(model_dir, result_path, output_dir):
     assert os.path.exists(result_path), result_path
     replace = True
     num_threads = 1
@@ -56,9 +56,15 @@ def render_output(result_path, output_dir):
     # pool.close() 
     # pool.join()
     i = 0
+    pre_dir =  model_dir + '/tmp'
+    pre_dir = pre_dir.replace(' ','_')
+    pre_dir = pre_dir.replace(':','_')
+    pre_dir = pre_dir.replace('.','_')
+    if not os.path.exists(pre_dir):
+        os.makedirs(pre_dir)
     for line in lines:
         img_path, l, output_path, replace = line
-        pre_name = output_path[-2:].replace('/', '_').replace('.','_')
+        pre_name = pre_dir +  '/' + output_path[-14:].replace('/', '_').replace('.','_')
         l = l.strip()
         l = l.replace(r'\pmatrix', r'\mypmatrix')
         l = l.replace(r'\matrix', r'\mymatrix')
@@ -81,15 +87,18 @@ def render_output(result_path, output_dir):
             tex_filename = pre_name+'.tex'
             log_filename = pre_name+'.log'
             aux_filename = pre_name+'.aux'
+            pdf_filename = pre_name+'.pdf'
+            png_filename = pre_name+'.png'
+            import code
             with open(tex_filename, "w") as w: 
                 print >> w, (template%l)
-            run("pdflatex -interaction=nonstopmode %s  >/dev/null"%tex_filename, TIMEOUT)
-            import code
+            run("pdflatex -interaction=nonstopmode -output-directory="+pre_dir+" "+\
+                tex_filename +"  >/dev/null", TIMEOUT)
+            if not os.path.exists(log_filename):
+                code.interact(local=dict(globals(), **locals()))
             #code.interact(local=dict(globals(), **locals()))
             os.remove(log_filename)
             os.remove(aux_filename)
-            pdf_filename = tex_filename[:-4]+'.pdf'
-            png_filename = tex_filename[:-4]+'.png'
             if not os.path.exists(pdf_filename):
                 print('cannot compile ' + img_path + ' to ' + output_path)
             else:

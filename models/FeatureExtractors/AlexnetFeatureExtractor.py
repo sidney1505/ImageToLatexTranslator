@@ -17,8 +17,8 @@ class AlexnetFeatureExtractor(FeatureExtractor):
                 features = tf.nn.bias_add(features, b1)            
                 features = tf.nn.relu(features)
 
-            features = tf.contrib.layers.batch_norm(features)
             features = tflearn.layers.conv.max_pool_2d(features, [2,2], strides=[2,2])
+            features = tf.contrib.layers.batch_norm(features)
 
             with tf.variable_scope("layer2", reuse=None):
                 w1 = tf.get_variable('weight', [11,11,96,256], tf.float32, \
@@ -28,8 +28,8 @@ class AlexnetFeatureExtractor(FeatureExtractor):
                 features = tf.nn.bias_add(features, b1)            
                 features = tf.nn.relu(features)
 
-            features = tf.contrib.layers.batch_norm(features)
             features = tflearn.layers.conv.max_pool_2d(features, [2,2], strides=[2,2])
+            features = tf.contrib.layers.batch_norm(features)
 
             with tf.variable_scope("layer3", reuse=None):
                 w2 = tf.get_variable('weight',[3,3,256,384], tf.float32, \
@@ -56,7 +56,7 @@ class AlexnetFeatureExtractor(FeatureExtractor):
                 features = tf.nn.bias_add(features, b3)
                 features = tf.nn.relu(features)
 
-            features = tf.contrib.layers.batch_norm(features)
             features = tflearn.layers.conv.max_pool_2d(features, [2,2], strides=[2,2])
+            features = tf.contrib.layers.batch_norm(features)
                  
             return features

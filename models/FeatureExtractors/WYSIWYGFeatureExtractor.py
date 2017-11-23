@@ -22,8 +22,9 @@ class WYSIWYGFeatureExtractor(FeatureExtractor):
                 features = tf.nn.conv2d(features, w2, strides=[1,1,1,1], padding='SAME')
                 b2 = tf.get_variable('bias', [128], tf.float32, tf.random_normal_initializer())
                 features = tf.nn.bias_add(features, b2)
-                features = tflearn.layers.conv.max_pool_2d(features, 2, strides=2)
                 features = tf.nn.relu(features)
+            
+            features = tflearn.layers.conv.max_pool_2d(features, 2, strides=2)
 
             with tf.variable_scope("layer3", reuse=None):
                 w3 = tf.get_variable('weight',[3,3,128,256], tf.float32, tf.random_normal_initializer())
@@ -50,8 +51,8 @@ class WYSIWYGFeatureExtractor(FeatureExtractor):
                 features = tf.nn.bias_add(features, b5)
                 features = tf.nn.relu(features)
 
-            features = tf.contrib.layers.batch_norm(features)
             features = tflearn.layers.conv.max_pool_2d(features, [1,2], strides=[1,2])
+            features = tf.contrib.layers.batch_norm(features)
 
             with tf.variable_scope("layer6", reuse=None):
                 w6 = tf.get_variable('weight',[3,3,512,self.model.num_features], tf.float32, tf.random_normal_initializer())

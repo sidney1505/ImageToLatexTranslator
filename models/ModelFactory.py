@@ -17,12 +17,14 @@ from Encoders.MonocolEncoder import MonocolEncoder
 from Encoders.BicolEncoder import BicolEncoder
 from Encoders.RowcolEncoder import RowcolEncoder
 from Encoders.QuadroEncoder import QuadroEncoder
+from Encoders.StackedQuadroEncoder import StackedQuadroEncoder
 # import decoders
 from Decoders.SimpleDecoder import SimpleDecoder
 from Decoders.SimplegruDecoder import SimplegruDecoder
 from Decoders.BahdanauDecoder import BahdanauDecoder
 from Decoders.BahdanauMonotonicDecoder import BahdanauMonotonicDecoder
 from Decoders.StackedBahdanauDecoder import StackedBahdanauDecoder
+from Decoders.StackedEncBahdanauDecoder import StackedEncBahdanauDecoder
 from Decoders.LuongDecoder import LuongDecoder
 from Decoders.LuongMonotonicDecoder import LuongMonotonicDecoder
 
@@ -163,6 +165,8 @@ class Model:
                 RowcolEncoder(self).createGraph()
             elif self.encoder == 'quadroEnc':
                 QuadroEncoder(self).createGraph()
+            elif self.encoder == 'stackedquadroEnc':
+                StackedQuadroEncoder(self).createGraph()
             else:
                 print(self.encoder + ' is no valid encoder type!')
                 quit()
@@ -181,6 +185,8 @@ class Model:
                 LuongMonotonicDecoder(self).createGraph()
             elif self.decoder == 'stackedbahdanauDec':
                 StackedBahdanauDecoder(self).createGraph()
+            elif self.decoder == 'stackedencbahdanauDec':
+                StackedEncBahdanauDecoder(self).createGraph()
             else:
                 print(self.decoder + ' is no valid decoder type!')
                 quit()

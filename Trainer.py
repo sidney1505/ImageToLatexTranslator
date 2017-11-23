@@ -16,9 +16,9 @@ from tflearn.layers.conv import conv_2d, max_pool_2d
 from tflearn.layers.estimator import regression
 # own packages
 import myutils.render_output as my_renderer
-import myutils.ImageEditDistanceCalculator as iedc
 from models.ModelFactory import Model
 import models.ModelFactory
+from Evaluator import Evaluator
 
 class Trainer:
     def __init__(self, model_dir, dataset_dir, tmp_dir, capacity):
@@ -33,9 +33,9 @@ class Trainer:
         self.capacity = capacity / 4
         # standart values for the hyperparameters
         self.mode = 'e2e'
-        self.feature_extractor = 'vggFe'
-        self.encoder = 'quadroEnc'
-        self.decoder = 'stackedbahdanauDec'
+        self.feature_extractor = 'vggfFe'
+        self.encoder = 'stackedquadroEnc'
+        self.decoder = 'stackedencbahdanauDec'
         self.encoder_size = 2048
         self.decoder_size = 512
         self.optimizer = 'momentum'
@@ -64,7 +64,6 @@ class Trainer:
                 self.vocabulary, self.__getMaxNumTokens(self.__getBatchDir('train')), \
                 self.capacity)
             self.train()
-            self.testModel()
         elif self.mode == 'stepbystep':
             fe_dir = self.__findBestModel(self.feature_extractor, optimizer=self.optimizer)
             if fe_dir == None or not proceed:
@@ -104,7 +103,22 @@ class Trainer:
             self.combineModels(fe_dir, ed_dir)
             # code.interact(local=dict(globals(), **locals()))
             self.train()
-            self.testModel()
+        self.testModel()
+        self.evaluateModel()
+
+    def evaluateModel(self):
+        test_result_path = self.model.model_dir + '/params/test_results/epoch' + \
+            str(self.model.current_epoch)
+        test_image_path = self.model.model_dir + 'rendered_test_images'
+        my_renderer.render_output(test_result_path, test_image_path)
+        e_test = Evaluator(self.model.model_dir)
+        e_test.evaluate()
+        val_result_path = self.model.model_dir + '/params/val_results/epoch' + \
+            str(self.model.current_epoch - 1)
+        val_image_path = self.model.model_dir + 'rendered_val_images'
+        my_renderer.render_output(val_result_path, val_image_path)
+        e_test = Evaluator(self.model.model_dir)
+        e_test.evaluate()
 
     def processData(self, preprocessing):
         for phase in ['train','val','test']:
@@ -456,60 +470,13 @@ class Trainer:
         train_loss, train_accuracy, infer_loss, test_infer_accuracy = \
             self.__iterateOneEpoch('test')
         print('model testing is finished!')
+        path = self.tmp_dir + '/' + feature_extractor + '_' + encoder + '_' + decoder + '_' +\
+            encoder_size + '_' + decoder_size + '_' + optimizer
+        if not os.path.exists(path):
+            self.writeLog(path, model_dir)
         # code.interact(local=dict(globals(), **locals()))
 
-
-    def evaluateModel(self, model_dir='', phase = 'test'):
-        if model_dir == '':
-            model_dir = self.model.model_dir
-            epoch = self.model.current_epoch
-        else:
-            epoch = int(self.readLog(model_dir + '/params/current_epoch'))
-        if phase == 'val':
-            epoch = epoch - 1
-        # token wise accuracies
-        result_path = model_dir + '/params/'+phase+'_results/epoch' + str(epoch)
-        #
-        val_token_acc = self.readLog(model_dir + '/params/'+phase+'_token_accuracy/epoch' + \
-            str(epoch - 1))
-        self.writeLog(model_dir + '/final_val_token_acc', val_token_acc)
-        test_token_acc = self.readLog(model_dir + '/params/test_token_accuracy/epoch' + \
-            str(epoch))
-        self.writeLog(model_dir + '/final_test_token_acc', test_token_acc)
-        # absolute accuracies
-        val_abs_acc = self.readLog(model_dir + '/params/val_absolute_accuracy/epoch' + \
-            str(epoch - 1))
-        self.writeLog(model_dir + '/final_val_abs_acc', val_abs_acc)
-        test_abs_acc = self.readLog(model_dir + \
-            '/params/test_absolute_accuracy/epoch' + str(epoch))
-        self.writeLog(model_dir + '/final_test_abs_acc', test_abs_acc)
-        # define the result paths
-        test_result_path = model_dir + '/params/test_results/epoch' + str(epoch)
-        # text edit distance accuracies
-        val_text_edit_distance = self.calculateEditDistance(val_result_path)
-        self.writeLog(model_dir + '/val_text_edit_distance', val_text_edit_distance)
-        test_text_edit_distance = self.calculateEditDistance(test_result_path)
-        self.writeLog(model_dir + '/test_text_edit_distance', test_text_edit_distance)
-        # acalculate the image edit distance
-        try:
-            val_image_edit_distance,_ = iedc.calcImageEditDistance(model_dir + \
-                '/params/val_rendered_images')
-            self.writeLog(model_dir + '/val_image_edit_distance', val_image_edit_distance)
-        finally:
-            pass
-        try:
-            test_image_edit_distance,_ = iedc.calcImageEditDistance(model_dir + \
-                'params/test_rendered_images')
-            self.writeLog(model_dir + '/test_image_edit_distance', test_image_edit_distance)
-        finally:
-            pass
-        # define which model to keep in the best model directory
-        feature_extractor = self.readLog(model_dir + '/params/feature_extractor')
-        #if self.preprocessing != '':
-        #    fe = self.preprocessing[:-1]
-        encoder = self.readLog(model_dir + '/params/encoder')
-
-    def renderImages(self, model_dir='', phase='test'):
+    '''def renderImages(self, model_dir='', phase='test'):
         if model_dir == '':
             model_dir = self.model.model_dir
             epoch = self.model.current_epoch
@@ -558,7 +525,7 @@ class Trainer:
         print('image edit distance: ' + str(image_edit_distance))
         print('image accuracy: ' + str(image_accuracy))
         self.writeLog(model_dir + '/image_edit_distance', image_edit_distance)
-        self.writeLog(model_dir + '/image_accuracy', image_accuracy)
+        self.writeLog(model_dir + '/image_accuracy', image_accuracy)'''
 
     def readLog(self, path):
         reader = open(path,'r')

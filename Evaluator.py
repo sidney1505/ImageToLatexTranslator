@@ -12,7 +12,7 @@ import code
 import shutil
 # own packages
 from myutils.LevSeq import StringMatcher
-import myutils.render_output as my_renderer
+from myutils.render_output import render_output
 
 class Evaluator:
     def __init__(self, model_dir, phase='test'):
@@ -22,7 +22,7 @@ class Evaluator:
         shutil.rmtree(self.evaluation_path, ignore_errors=True)
         os.makedirs(self.evaluation_path)
 
-    def evaluate(self, result_file, image_dir, vocabulary, max_length=625):
+    def evaluate(self, result_file, image_dir, vocabulary, max_length=626):
         counts = np.zeros(max_length)
         # label evaluation
         total_corrects = np.zeros(max_length)
@@ -88,7 +88,6 @@ class Evaluator:
                                 confusion[gold][pred] = confusion[gold][pred] + 1
                             except Exception:
                                 print('in exception')
-                                code.interact(local=dict(globals(), **locals()))
                     total_tokens_corrects[length] += tokens_correct / ref
                     #
                     edit_distance = distance.levenshtein(tokens_gold, tokens_pred)
@@ -388,21 +387,43 @@ def img_edit_distance_file(file1, file2, output_path=None):
         img2 = None
     return img_edit_distance(img1, img2, output_path)
 
-def main():
-    print('enter main method')
-    e = Evaluator('/cvhci/data/docs/math_expr/printed/im2latex-100k/mymodels/' + \
-        'vggFe_quadroEnc_bahdanauDec_2048_512_momentum_2017-11-08 10:48:07.887550')
-    result_path = '/cvhci/data/docs/math_expr/printed/im2latex-100k/mymodels/' + \
+def evaluateTorchModel():
+    model_dir = '/cvhci/data/docs/math_expr/printed/im2latex-100k/models/' + \
+        'final_models_torch/wysiwyg3'
+    e = Evaluator(model_dir)
+    '''result_path = '/cvhci/data/docs/math_expr/printed/im2latex-100k/mymodels/' + \
         'vggFe_quadroEnc_bahdanauDec_2048_512_momentum_2017-11-08 10:48:07.887550/' + \
         'params/test_results/epoch11'
+    image_dir = '/cvhci/data/docs/math_expr/printed/im2latex-100k/mymodels/' + \
+        'vggFe_quadroEnc_bahdanauDec_2048_512_momentum_2017-11-08 10:48:07.887550' + \
+        '/params/test_rendered_images' '''
+    result_path = model_dir + '/results/results.txt'
+    image_dir = model_dir + '/images_rendered'
     vocab_path = '/cvhci/data/docs/math_expr/printed/im2latex-100k/mymodels/' + \
         'vggFe_quadroEnc_bahdanauDec_2048_512_momentum_2017-11-08 10:48:07.887550/' + \
         'params/vocabulary'
     vocabs = readParamList(vocab_path)
-    image_dir = '/cvhci/data/docs/math_expr/printed/im2latex-100k/mymodels/' + \
-        'vggFe_quadroEnc_bahdanauDec_2048_512_momentum_2017-11-08 10:48:07.887550' + \
-        '/params/test_rendered_images'
     e.evaluate(result_path, image_dir, vocabs)
+
+def evaluateModel(model_dir):
+    current_epoch = int(readParamList(model_dir + '/params/current_epoch')[0])
+    vocabulary = readParamList(model_dir + '/params/vocabulary')
+    test_result_path = model_dir + '/params/test_results/epoch' + \
+        str(current_epoch)
+    test_image_path = model_dir + 'rendered_test_images'
+    render_output(model_dir, test_result_path, test_image_path)
+    e_test = Evaluator(model_dir)
+    e_test.evaluate(test_result_path, test_image_path, vocabulary)
+    val_result_path = model_dir + '/params/val_results/epoch' + \
+        str(current_epoch - 1)
+    val_image_path = model_dir + '/rendered_val_images'
+    render_output(model_dir, val_result_path, val_image_path)
+    e_test = Evaluator(model_dir)
+    e_test.evaluate(val_result_path, val_image_path, vocabulary, 151)
+
+
+def main():
+    print('enter main method')    
     code.interact(local=dict(globals(), **locals()))
 
 if __name__ == '__main__':
