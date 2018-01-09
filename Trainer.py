@@ -32,10 +32,10 @@ class Trainer:
         self.tmp_dir = tmp_dir
         self.capacity = capacity / 4
         # standart values for the hyperparameters
-        self.mode = 'e2e'
+        self.mode = 'stepbystep'
         self.feature_extractor = 'vggfFe'
-        self.encoder = 'stackedquadroEnc'
-        self.decoder = 'stackedencbahdanauDec'
+        self.encoder = 'quadroEnc'
+        self.decoder = 'bahdanauDec'
         self.encoder_size = 2048
         self.decoder_size = 512
         self.optimizer = 'momentum'
@@ -45,6 +45,7 @@ class Trainer:
         self.lr_decay = 0.1
         # indicates whether and which preprocessed batches should be used
         self.preprocessing = ''
+        self.best = True
 
     def setModelParameters(self, mode, feature_extractor, encoder, decoder, encoder_size, \
             decoder_size, optimizer):
@@ -106,7 +107,7 @@ class Trainer:
         self.testModel()
         self.evaluateModel()
 
-    def evaluateModel(self):
+    '''def evaluateModel(self):
         test_result_path = self.model.model_dir + '/params/test_results/epoch' + \
             str(self.model.current_epoch)
         test_image_path = self.model.model_dir + 'rendered_test_images'
@@ -118,7 +119,7 @@ class Trainer:
         val_image_path = self.model.model_dir + 'rendered_val_images'
         my_renderer.render_output(val_result_path, val_image_path)
         e_test = Evaluator(self.model.model_dir)
-        e_test.evaluate()
+        e_test.evaluate()'''
 
     def processData(self, preprocessing):
         for phase in ['train','val','test']:
@@ -158,6 +159,7 @@ class Trainer:
 
     def train(self):
         # the training loop
+        self.best = False
         train_last_loss = float('inf')
         val_last_loss = float('inf')
         val_last_infer_loss = float('inf')
@@ -177,6 +179,7 @@ class Trainer:
             self.model.writeParam('current_step',self.model.current_step)
             end = time.time()
             self.model.current_millis = self.model.current_millis + (end - begin)
+            self.model.writeParam('current_millis',self.model.current_millis)
             self.model.writeParamInList('stats/losses/train_train',train_loss)
             self.model.writeParamInList('stats/losses/train_infer',infer_loss)
             self.model.writeParamInList('stats/losses/val_train',val_loss)
@@ -198,6 +201,8 @@ class Trainer:
                 break
             elif val_last_infer_loss < val_infer_loss: # or self.model.current_epoch % 3 == 0:
                 self.model.decayLearningRate(self.lr_decay)
+            else:
+                self.model.saveBest()
             val_last_infer_loss = val_infer_loss
             train_last_loss = train_loss
             val_last_loss = val_loss
@@ -407,7 +412,10 @@ class Trainer:
         self.model = Model(model_dir, max_num_tokens=max_num_tokens, loaded=True,
             only_inference=only_inference)
         print('load variables!')
-        self.model.restoreLastCheckpoint()
+        if self.best:
+            self.model.restoreBestCheckpoint()
+        else:
+            self.model.restoreLastCheckpoint()
         if not only_inference:
             self.model.createOptimizer()
         print('#############################################################')
@@ -465,8 +473,8 @@ class Trainer:
         print('#############################################################')
 
     def testModel(self):
-        if not self.model.only_inference:
-            self.loadModel(self.model.model_dir, only_inference=True)
+        self.best = True
+        self.loadModel(self.model.model_dir, only_inference=True)
         train_loss, train_accuracy, infer_loss, test_infer_accuracy = \
             self.__iterateOneEpoch('test')
         print('model testing is finished!')
@@ -713,98 +721,6 @@ class Trainer:
             os.makedirs(save_path)
         plt.savefig(save_path + '/epoch' + str(self.model.current_epoch))
         plt.close()
-
-    def analyseVocabCount(self):
-        vocabulary = self.vocabulary.split('\n')
-        vocab_count = np.zeros(len(vocabulary))
-        n = 0
-        for phase in ['train','val','test']:
-            for batch_name in self.__getBatchNames(phase):
-                print(phase + '_' + batch_name + ' loaded!')
-                batch = np.load(self.__getBatchDir(phase) + '/' + batch_name)
-                labels = batch['labels']
-                for batch_nr in range(labels.shape[0]):
-                    for token in range(labels.shape[1]):
-                        current_vocab = int(labels[batch_nr][token])
-                        #code.interact(local=dict(globals(), **locals()))
-                        vocab_count[current_vocab] = vocab_count[current_vocab] + 1
-                        n = n + 1
-        # code.interact(local=dict(globals(), **locals()))
-        n1 = n - vocab_count[-1]
-        vocab_norm_count = vocab_count / float(n1)
-        sort_idx = np.argsort(vocab_norm_count)[::-1]
-        # code.interact(local=dict(globals(), **locals()))
-        sorted_vocabulary = []
-        sorted_vocab_counts = []
-        sorted_vocab_string = ''
-        for idx in range(len(sort_idx)):
-            sorted_vocabulary.append(vocabulary[sort_idx[idx]])
-            sorted_vocab_counts.append(vocab_norm_count[sort_idx[idx]])
-            sorted_vocab_string = sorted_vocab_string + str(vocabulary[sort_idx[idx]]) + \
-                ' : ' + str(vocab_norm_count[sort_idx[idx]]) + '\n'
-        vocab_writer = open(self.dataset_dir + '/vocab_stats.txt', 'w')
-        vocab_writer.write(sorted_vocab_string)
-        vocab_writer.close()
-        svocabs = sorted_vocabulary[1:21]
-        y_pos = np.arange(len(svocabs))
-        scounts = sorted_vocab_counts[1:21]
-        plt.bar(y_pos, scounts, align='center', alpha=0.5)
-        plt.xticks(y_pos, svocabs)
-        plt.ylabel('%')
-        plt.title('Frequency')
-        plt.savefig(self.dataset_dir + '/vocab_stats.png')
-        plt.close()
-
-    def analyseTokenCount(self):
-        vocabulary = self.vocabulary.split('\n')
-        endtoken = len(vocabulary) - 1
-        counts = np.zeros(626)
-        for phase in ['train','val','test']:
-            for batch_name in self.__getBatchNames(phase):
-                print(phase + '_' + batch_name + ' loaded!')
-                batch = np.load(self.__getBatchDir(phase) + '/' + batch_name)
-                labels = batch['labels']
-                for batch_nr in range(labels.shape[0]):
-                    count = 0
-                    for token in range(labels.shape[1]):
-                        if labels[batch_nr][token] == endtoken:
-                            break
-                        else:
-                            count = count + 1
-                    counts[count] = counts[count] + 1
-        countlist = []
-        for i in range(len(counts)):
-            countlist = np.append(countlist, np.tile(i,int(counts[i])))
-        std_writer = open(self.dataset_dir + '/label_length_std.txt', 'w')
-        std_writer.write(str(np.std(countlist)))
-        std_writer.close()
-        std_writer = open(self.dataset_dir + '/label_length_mean.txt', 'w')
-        std_writer.write(str(np.mean(countlist)))
-        std_writer.close()
-        std_writer = open(self.dataset_dir + '/label_length_median.txt', 'w')
-        std_writer.write(str(np.median(countlist)))
-        std_writer.close()
-        bins = [15,30,45,60,75,90,105,120,135]
-        bin_labels = ['<15','[15,30)','[30,45)','[45,60)','[60,75)','[75,90)','[90,105)', \
-            '[105,120)','[120,135)', '>=135']
-        binc = np.zeros(10)
-        c = 0
-        for i in range(len(bins)):
-            for j in range(c,bins[i]):
-                binc[i] = binc[i] + counts[j]
-            c = bins[i]
-        for j in range(135,626):
-            binc[9] = binc[9] + counts[j]
-        binfreq = binc / np.sum(binc)
-        y_pos = np.arange(len(binc))
-        plt.bar(y_pos, binfreq, align='center', alpha=1.0)
-        plt.xticks(y_pos, bin_labels)
-        plt.xlabel('tokens')
-        plt.ylabel('%')
-        plt.title('length of the labels')
-        plt.savefig(self.dataset_dir + '/label_length_stats.png')
-        plt.close()
-        #code.interact(local=dict(globals(), **locals()))
 
 
 

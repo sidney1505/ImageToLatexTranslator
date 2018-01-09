@@ -15,125 +15,196 @@ from myutils.LevSeq import StringMatcher
 from myutils.render_output import render_output
 
 class Evaluator:
-    def __init__(self, model_dir, phase='test'):
+    def __init__(self, model_dir, phase='test', load_stats=False):
         self.model_dir = model_dir
         self.phase = phase
         self.evaluation_path = self.model_dir + '/' + phase + '_evaluation'
-        shutil.rmtree(self.evaluation_path, ignore_errors=True)
-        os.makedirs(self.evaluation_path)
+        self.load_stats = load_stats
+        if not load_stats:
+            shutil.rmtree(self.evaluation_path, ignore_errors=True)
+            os.makedirs(self.evaluation_path)
 
     def evaluate(self, result_file, image_dir, vocabulary, max_length=626):
-        counts = np.zeros(max_length)
-        # label evaluation
-        total_corrects = np.zeros(max_length)
-        total_tokens_corrects = np.zeros(max_length)
-        confusion = np.zeros([len(vocabulary),len(vocabulary)])
-        total_refs = np.zeros(max_length)
-        total_edit_distances = np.zeros(max_length)
-        # image evaluation
-        total_image_edit_distances = np.zeros(max_length)
-        total_image_refs = np.zeros(max_length)
-        total_image_corrects = np.zeros(max_length)
-        total_image_correct_eliminates = np.zeros(max_length)
-        #
-        correct = 0
-        #
-        def weighted_average(metric, l=0, r=max_length):
-            akk = 0
-            total_count = 0
-            for i in range(l,r):
-                if counts[i] != 0:
-                    akk += metric[i] * counts[i]
-                    total_count += counts[i]
-            return akk / total_count
-        # code.interact(local=dict(globals(), **locals()))
-        with open(result_file) as fin:
-            for idx,line in enumerate(fin):
-                items = line.strip().split('\t')
-                if len(items) == 5:
-                    img_path, label_gold, label_pred, score_pred, score_gold = items
-                    filename_gold = image_dir + '/images_gold/' + img_path
-                    filename_pred = image_dir + '/images_pred/' + img_path
-                    if not os.path.exists(filename_gold):
-                        print(filename_gold + " doesn't exists!")
-                        continue
-                    # label evaluation
-                    if label_gold == label_pred:
-                        correct = 1
-                    l_pred = label_pred.strip()
-                    l_gold = label_gold.strip()
-                    tokens_pred = l_pred.split(' ')
-                    tokens_gold = l_gold.split(' ')
-                    ref = max(len(tokens_gold), len(tokens_pred))
-                    ref_min = min(len(tokens_gold), len(tokens_pred))
-                    if l_pred == '':
-                        print('prediction label empty')
-                        ref_min = 0
-                    if l_gold == '':
-                        print('gold label empty')
-                        ref_min = 0
-                    length = len(tokens_gold)
-                    counts[length] = counts[length] + 1
-                    #
-                    total_corrects[length] += correct
-                    #
-                    tokens_correct = 0.0
-                    for i in range(ref_min):
-                        if tokens_pred[i] == tokens_gold[i]:
-                            tokens_correct += 1
-                        elif i == 0 or tokens_pred[i-1] == tokens_gold[i-1]:
-                            try:
-                                gold = vocabulary.index(tokens_gold[i])
-                                pred = vocabulary.index(tokens_pred[i])
-                                confusion[gold][pred] = confusion[gold][pred] + 1
-                            except Exception:
-                                print('in exception')
-                    total_tokens_corrects[length] += tokens_correct / ref
-                    #
-                    edit_distance = distance.levenshtein(tokens_gold, tokens_pred)
-                    total_refs[length] += ref
-                    total_edit_distances[length] += edit_distance
-                    # image evaluation
-                    image_edit_distance, image_ref, match1, match2 = \
-                        img_edit_distance_file(filename_gold, filename_pred)
-                    total_image_edit_distances[length] += image_edit_distance
-                    total_image_refs[length] += image_ref
-                    if match1:
-                        total_image_corrects[length] += 1
-                    if match2:
-                        total_image_correct_eliminates[length] += 1
-                    #
-                    correct = 0
-                if idx != 0 and idx % 10 == 0:
-                    print(idx)
-                    #
-                    absolute_accuracies = total_corrects / counts
-                    token_accuracies = total_tokens_corrects / counts
-                    text_edit_distances = 1.0 - total_edit_distances / total_refs
-                    image_edit_distances = 1.0 - total_image_edit_distances / total_image_refs
-                    image_accuracies = total_image_corrects / counts
-                    image_eliminate_accuracies = total_image_correct_eliminates / counts
-                    # 
-                    token_accuracy = weighted_average(token_accuracies)
-                    absolute_accuracy = weighted_average(absolute_accuracies)
-                    text_edit_distance = weighted_average(text_edit_distances)
-                    image_edit_distance = weighted_average(image_edit_distances)
-                    image_accuracy = weighted_average(image_accuracies)
-                    image_eliminate_accuracy = weighted_average(image_eliminate_accuracies)
-                    #
-                    print('token accuracy: ' + str(token_accuracy))
-                    print('absolute accuracy: ' + str(absolute_accuracy))
-                    print('text edit distance: ' + str(text_edit_distance))
-                    print('image_edit_distance: ' + str(image_edit_distance))
-                    print('image_accuracy: ' + str(image_accuracy))
-                    print('image_eliminate_accuracy: ' + str(image_eliminate_accuracy))
-        #
-        absolute_accuracies = total_corrects / counts
-        token_accuracies = total_tokens_corrects / counts
-        text_edit_distances = 1.0 - total_edit_distances / total_refs
-        image_edit_distances = 1.0 - total_image_edit_distances / total_image_refs
-        image_accuracies = total_image_corrects / counts
-        image_eliminate_accuracies = total_image_correct_eliminates / counts
+        if not self.load_stats:
+            number_expressions = np.zeros(max_length)
+            # label evaluation
+            total_corrects = np.zeros(max_length)
+            total_tokens_corrects = np.zeros(max_length)
+            confusion = np.zeros([len(vocabulary),len(vocabulary)])
+            total_refs = np.zeros(max_length)
+            total_edit_distances = np.zeros(max_length)
+            # image evaluation
+            total_image_edit_distances = np.zeros(max_length)
+            total_image_refs = np.zeros(max_length)
+            total_image_corrects = np.zeros(max_length)
+            total_image_correct_eliminates = np.zeros(max_length)
+            #
+            label_correct_predictions = np.empty(max_length, dtype=object)
+            label_wrong_predictions = np.empty(max_length, dtype=object)
+            img_correct_predictions = np.empty(max_length, dtype=object)
+            img_wrong_predictions = np.empty(max_length, dtype=object)
+            for i in range(max_length):
+                label_correct_predictions[i] = []
+                label_wrong_predictions[i] = []
+                img_correct_predictions[i] = []
+                img_wrong_predictions[i] = []
+            #
+            number_by_token = np.zeros(len(vocabulary))
+            correct_by_token = np.zeros(len(vocabulary))
+            #
+            correct = 0
+            #
+            def weighted_average(metric, l=0, r=max_length):
+                akk = 0
+                total_count = 0
+                for i in range(l,r):
+                    if number_expressions[i] != 0:
+                        akk += metric[i] * number_expressions[i]
+                        total_count += number_expressions[i]
+                return akk / total_count
+            # code.interact(local=dict(globals(), **locals()))
+            with open(result_file) as fin:
+                for idx,line in enumerate(fin):
+                    items = line.strip().split('\t')
+                    if len(items) == 5:
+                        img_path, label_gold, label_pred, score_pred, score_gold = items
+                        filename_gold = image_dir + '/images_gold/' + img_path
+                        filename_pred = image_dir + '/images_pred/' + img_path
+                        if not os.path.exists(filename_gold):
+                            print(filename_gold + " doesn't exists!")
+                            continue
+                        # label evaluation
+                        l_pred = label_pred.strip()
+                        l_gold = label_gold.strip()
+                        tokens_pred = l_pred.split(' ')
+                        tokens_gold = l_gold.split(' ')
+                        ref = max(len(tokens_gold), len(tokens_pred))
+                        ref_min = min(len(tokens_gold), len(tokens_pred))
+                        if l_gold == '':
+                            print('gold label empty')
+                            continue
+                        if l_pred == '':
+                            print('prediction label empty')
+                            ref_min = 0
+                        length = len(tokens_gold)
+                        number_expressions[length] = number_expressions[length] + 1
+                        #
+                        if label_gold == label_pred:
+                            correct = 1
+                            label_correct_predictions[length].append((label_gold,label_pred))
+                        else:
+                            label_wrong_predictions[length].append((label_gold,label_pred))
+                        #
+                        total_corrects[length] += correct
+                        #
+                        tokens_correct = 0.0
+                        for i in range(ref_min):
+                            if tokens_pred[i] == tokens_gold[i]:
+                                tokens_correct += 1
+                            elif i == 0 or tokens_pred[i-1] == tokens_gold[i-1]:
+                                try:
+                                    gold = vocabulary.index(tokens_gold[i])
+                                    pred = vocabulary.index(tokens_pred[i])
+                                    confusion[gold][pred] = confusion[gold][pred] + 1
+                                except Exception:
+                                    print('in exception')
+                        total_tokens_corrects[length] += tokens_correct / ref
+                        #
+                        edit_distance = distance.levenshtein(tokens_gold, tokens_pred)
+                        total_refs[length] += ref
+                        total_edit_distances[length] += edit_distance
+                        # image evaluation
+                        image_edit_distance, image_ref, match1, match2 = \
+                            img_edit_distance_file(filename_gold, filename_pred)
+                        total_image_edit_distances[length] += image_edit_distance
+                        total_image_refs[length] += image_ref
+                        if match1:
+                            total_image_corrects[length] += 1
+                        if match2:
+                            total_image_correct_eliminates[length] += 1
+                            img_correct_predictions[length].append((label_gold,label_pred))
+                        else:
+                            img_wrong_predictions[length].append((label_gold,label_pred))
+                        #
+                        for i in range(len(vocabulary)):
+                            if vocabulary[i] in tokens_gold:
+                                number_by_token[i] += 1
+                                if match2:
+                                    correct_by_token[i] += 1
+                        correct = 0
+                    if idx != 0 and idx % 10 == 0:
+                        print(idx)
+                        #
+                        absolute_accuracies = total_corrects / number_expressions
+                        token_accuracies = total_tokens_corrects / number_expressions
+                        text_edit_distances = 1.0 - total_edit_distances / total_refs
+                        image_edit_distances = 1.0 - total_image_edit_distances / total_image_refs
+                        image_accuracies = total_image_corrects / number_expressions
+                        image_eliminate_accuracies = total_image_correct_eliminates / number_expressions
+                        # 
+                        token_accuracy = weighted_average(token_accuracies)
+                        absolute_accuracy = weighted_average(absolute_accuracies)
+                        text_edit_distance = weighted_average(text_edit_distances)
+                        image_edit_distance = weighted_average(image_edit_distances)
+                        image_accuracy = weighted_average(image_accuracies)
+                        image_eliminate_accuracy = weighted_average(image_eliminate_accuracies)
+                        #
+                        print('token accuracy: ' + str(token_accuracy))
+                        print('absolute accuracy: ' + str(absolute_accuracy))
+                        print('text edit distance: ' + str(text_edit_distance))
+                        print('image_edit_distance: ' + str(image_edit_distance))
+                        print('image_accuracy: ' + str(image_accuracy))
+                        print('image_eliminate_accuracy: ' + str(image_eliminate_accuracy))
+            #
+            absolute_accuracies = total_corrects / number_expressions
+            token_accuracies = total_tokens_corrects / number_expressions
+            text_edit_distances = 1.0 - total_edit_distances / total_refs
+            image_edit_distances = 1.0 - total_image_edit_distances / total_image_refs
+            image_accuracies = total_image_corrects / number_expressions
+            image_eliminate_accuracies = total_image_correct_eliminates / number_expressions
+            #
+            rel_correct_by_token = correct_by_token / number_by_token
+            #
+            with open(self.evaluation_path + '/analysis.npz', 'w') as fout:
+                np.savez(fout,
+                    number_expressions=number_expressions, \
+                    absolute_accuracies=absolute_accuracies, \
+                    token_accuracies=token_accuracies, \
+                    text_edit_distances=text_edit_distances, \
+                    confusion=confusion, \
+                    image_edit_distances=image_edit_distances, \
+                    image_accuracies=image_accuracies, \
+                    image_eliminate_accuracies=image_eliminate_accuracies, \
+                    label_correct_predictions=label_correct_predictions, \
+                    label_wrong_predictions=label_wrong_predictions, \
+                    img_correct_predictions=img_correct_predictions, \
+                    img_wrong_predictions=img_wrong_predictions, \
+                    number_by_token=number_by_token, \
+                    rel_correct_by_token=rel_correct_by_token)
+        else:
+            stats = np.load(self.evaluation_path + '/analysis.npz')
+            number_expressions = stats['number_expressions']
+            absolute_accuracies = stats['absolute_accuracies']
+            token_accuracies = stats['token_accuracies']
+            text_edit_distances = stats['text_edit_distances']
+            confusion = stats['confusion']
+            image_edit_distances = stats['image_edit_distances']
+            image_accuracies = stats['image_accuracies']
+            image_eliminate_accuracies = stats['image_eliminate_accuracies']
+            label_correct_predictions = stats['label_correct_predictions']
+            label_wrong_predictions = stats['label_wrong_predictions']
+            img_correct_predictions = stats['img_correct_predictions']
+            img_wrong_predictions = stats['img_wrong_predictions']
+            number_by_token = stats['number_by_token']
+            rel_correct_by_token = stats['rel_correct_by_token']
+            def weighted_average(metric, l=0, r=max_length):
+                akk = 0
+                total_count = 0
+                for i in range(l,r):
+                    if number_expressions[i] != 0:
+                        akk += metric[i] * number_expressions[i]
+                        total_count += number_expressions[i]
+                return akk / total_count
         # 
         token_accuracy = weighted_average(token_accuracies)
         absolute_accuracy = weighted_average(absolute_accuracies)
@@ -160,18 +231,10 @@ class Evaluator:
         self.writeResult(self.model_dir + '/' + self.phase + '_image_eliminate_accuracy', \
             image_eliminate_accuracy)
         #
-        with open(self.evaluation_path + '/analysis.npz', 'w') as fout:
-            np.savez(fout, absolute_accuracies=absolute_accuracies, \
-                token_accuracies=token_accuracies, \
-                text_edit_distances=text_edit_distances, \
-                confusion=confusion, \
-                total_image_edit_distances=total_image_edit_distances, \
-                image_accuracies=image_accuracies, \
-                image_eliminate_accuracies=image_eliminate_accuracies)
         # create and save bins
-        bins = [0,15,30,45,60,75,90,105,120,135,150,max_length]
+        bins = [0,15,30,45,60,75,90,105,120,135,151,max_length]
         bin_labels = ['<15','[15,30)','[30,45)','[45,60)','[60,75)','[75,90)','[90,105)', \
-            '[105,120)','[120,135)', '[135,150)', '>=150']
+            '[105,120)','[120,135)', '[135,150]', '>150']
         def per_bin(metric):
             binc = np.zeros(len(bins) - 1)
             for i in range(0,len(bins)-1):
@@ -183,10 +246,13 @@ class Evaluator:
         image_edit_distance_bins = per_bin(image_edit_distances)
         image_accuracy_bins = per_bin(image_accuracies)
         image_eliminate_accuracy_bins = per_bin(image_eliminate_accuracies)
-        y_pos = np.arange(len(bin_labels))
+        x_pos = np.arange(len(bin_labels))
         def savePlot(metric, name):
-            plt.bar(y_pos, metric, align='center', alpha=1.0)
-            plt.xticks(y_pos, bin_labels)
+            # plt.bar(x_pos, 100 * metric, align='center', alpha=1.0)
+            fig, ax = plt.subplots()
+            width = 0.35
+            rects1 = ax.bar(x_pos, metric * 100, width, color='b')
+            plt.xticks(x_pos, bin_labels, rotation=45)
             plt.ylabel('%')
             plt.savefig(self.evaluation_path + '/' + name + '.pdf')
             plt.close()
@@ -202,19 +268,84 @@ class Evaluator:
         m_from = m / len(vocabulary)
         m_to = m % len(vocabulary)
         # code.interact(local=dict(globals(), **locals()))
+        self.clearList('confusion_outline.txt')
         for k in range(20):
             vocab_from = vocabulary[m_from[k]]
             vocab_to = vocabulary[m_to[k]]
             value = str(100 * confusion[m_from[k]][m_to[k]])
             line = vocab_from + ' -> ' + vocab_to + ' : ' + value
             self.writeParamInList('confusion_outline.txt', line)
-        return token_accuracy, absolute_accuracy, text_edit_distance
+        # problems with rare tokens
+        l = number_by_token.argsort()[::-1]
+        rel_correct_by_token_sorted = []
+        for i in range(len(l)):
+            if number_by_token[i] > 0:
+                rel_correct_by_token_sorted.append(rel_correct_by_token[l[i]])
+        # code.interact(local=dict(globals(), **locals()))
+        x_pos = np.arange(len(rel_correct_by_token_sorted))
+        plt.plot(x_pos, rel_correct_by_token_sorted)
+        plt.savefig(self.evaluation_path + '/error_by_token_frequency.pdf')
+        #
+        l2 = rel_correct_by_token.argsort()
+        self.clearList('worst_recognized_symbols.txt')
+        self.clearList('worst_recognized_symbols_bias.txt')
+        number_never_correct = 0
+        a = 0
+        b = 0
+        for i in range(100):
+            vocab = vocabulary[l2[i]]
+            if rel_correct_by_token[l2[i]] == 0.0:
+                number_never_correct += 1
+            line = vocab + ' : ' + str(rel_correct_by_token[l2[i]]) + ' : ' + \
+                str(number_by_token[l2[i]])
+            if a < 20:
+                self.writeParamInList('worst_recognized_symbols.txt', line)
+                a += 1
+            if b < 20 and number_by_token[l2[i]] > 100:
+                self.writeParamInList('worst_recognized_symbols_bias.txt', line)
+                b += 1
+        self.writeResult(self.evaluation_path + '/number_never_correct.txt', \
+            number_never_correct)
+        self.writeResult(self.evaluation_path + '/number_in_testset',len(x_pos))
+        # problems with complicated structures
+        '''rel_number_by_token = number_by_token / np.sum(number_expressions)
+        vocabs_with_bias = []
+        accuracies_with_bias = []
+        my_scores = []
+        number_tokens_with_bias = []
+        rel_number_tokens_with_bias = []
+        for i in range(len(vocabulary)):
+            if number_by_token[i] > 100:
+                vocabs_with_bias.append(vocabulary[i])
+                accuracies_with_bias.append(rel_correct_by_token[i])
+                number_tokens_with_bias.append(number_by_token[i])
+                rel_number_tokens_with_bias.append(rel_number_by_token[i])
+                my_scores.append((rel_correct_by_token[i] + rel_number_by_token[i])/2.0)
+        #
+        l3 = np.array(accuracies_with_bias).argsort()
+        self.clearList('worst_recognized_symbols_bias.txt')
+        for i in range(20):
+            line = vocabs_with_bias[l3[i]] + ' : ' + str(accuracies_with_bias[l3[i]]) + \
+                ' : ' + str(number_tokens_with_bias[l3[i]])
+            self.writeParamInList('worst_recognized_symbols_bias.txt', line)
+        #
+        l4 = np.array(my_scores).argsort()
+        self.clearList('worst_my_scores.txt')
+        for i in range(20):
+            line = vocabs_with_bias[l4[i]] + ' : ' + str(accuracies_with_bias[l4[i]]) + \
+                ' : ' + str(rel_number_tokens_with_bias[l4[i]]) + \
+                ' : ' + str(my_scores[l4[i]])
+            self.writeParamInList('worst_my_scores.txt', line)'''
 
     def writeResult(self, write_path, value):
         # write_path = self.evaluation_path + '/' + path
         writer = open(write_path, 'a')
         writer.write(str(value) + '\n')
         writer.close()
+
+    def clearList(self, path):
+        if os.path.exists(self.evaluation_path + '/' + path):
+            os.remove(self.evaluation_path + '/' + path)
 
     def writeParamInList(self, write_path, value):
         write_path = self.evaluation_path + '/' + write_path
@@ -405,26 +536,33 @@ def evaluateTorchModel():
     vocabs = readParamList(vocab_path)
     e.evaluate(result_path, image_dir, vocabs)
 
-def evaluateModel(model_dir):
+def evaluateModel(model_dir, render_images=False, load_stats=True):
     current_epoch = int(readParamList(model_dir + '/params/current_epoch')[0])
     vocabulary = readParamList(model_dir + '/params/vocabulary')
     test_result_path = model_dir + '/params/test_results/epoch' + \
         str(current_epoch)
     test_image_path = model_dir + 'rendered_test_images'
-    render_output(model_dir, test_result_path, test_image_path)
-    e_test = Evaluator(model_dir)
+    if render_images:
+        render_output(model_dir, test_result_path, test_image_path)
+    e_test = Evaluator(model_dir, load_stats=load_stats)
     e_test.evaluate(test_result_path, test_image_path, vocabulary)
+    code.interact(local=dict(globals(), **locals()))
+    #
     val_result_path = model_dir + '/params/val_results/epoch' + \
         str(current_epoch - 1)
     val_image_path = model_dir + '/rendered_val_images'
-    render_output(model_dir, val_result_path, val_image_path)
-    e_test = Evaluator(model_dir)
+    if render_images:
+        render_output(model_dir, val_result_path, val_image_path)
+    e_test = Evaluator(model_dir, 'val', load_stats=load_stats)
     e_test.evaluate(val_result_path, val_image_path, vocabulary, 151)
 
 
 def main():
-    print('enter main method')    
+    print('enter main method')
     code.interact(local=dict(globals(), **locals()))
+    #best_model_dir = '/cvhci/data/docs/math_expr/printed/im2latex-100k/mymodels/' + \
+    #    'vggfFe_quadroEnc_bahdanauDec_2048_512_momentum_2017-11-14 16:11:29.094884'
+    #evaluateModel(best_model_dir)
 
 if __name__ == '__main__':
     main()

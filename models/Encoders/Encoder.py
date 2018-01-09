@@ -216,8 +216,6 @@ class Encoder:
                 colrnncell_bw, colfeatures, initial_state_fw=initial_state_cols, \
                 initial_state_bw=initial_state_cols, parallel_iterations=1)
             colfeatures = tf.concat([colfeatures[0],colfeatures[1]],-1)
-            tf.reshape(rowfeatures, [batchsize,height,width,\
-                2 * self.channels]) # (20, 4, 48, 2048)            
             colfeatures = tf.reshape(colfeatures, [batchsize,width,height,\
                 2 * self.channels]) # (20, 4, 48, 2048)
             self.refined_cols = tf.transpose(colfeatures, [0,2,1,3])

@@ -17,7 +17,7 @@ class VGGFinegrainedFeatureExtractor(FeatureExtractor):
                     padding='SAME')
                 b1 = tf.get_variable('bias', [64], tf.float32, \
                     tf.random_normal_initializer())
-                features = tf.nn.bias_add(features, b1)            
+                features = tf.nn.bias_add(features, b1)
                 features = tf.nn.relu(features)
 
             with tf.variable_scope("layer2", reuse=None):
@@ -26,7 +26,7 @@ class VGGFinegrainedFeatureExtractor(FeatureExtractor):
                 features = tf.nn.conv2d(features, w1, strides=[1,1,1,1], padding='SAME')
                 b1 = tf.get_variable('bias', [64], tf.float32, \
                     tf.random_normal_initializer())
-                features = tf.nn.bias_add(features, b1)            
+                features = tf.nn.bias_add(features, b1)
                 features = tf.nn.relu(features)
 
             features = tflearn.layers.conv.max_pool_2d(features, [2,2], strides=[2,2])

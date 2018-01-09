@@ -11,6 +11,7 @@ from FeatureExtractors.DensenetFeatureExtractor import DensenetFeatureExtractor
 # import classifiers
 from Classifiers.SimpleClassifier import SimpleClassifier
 # import encoders
+from Encoders.SimpleEncoder import SimpleEncoder
 from Encoders.MonorowEncoder import MonorowEncoder
 from Encoders.BirowEncoder import BirowEncoder
 from Encoders.MonocolEncoder import MonocolEncoder
@@ -26,6 +27,7 @@ from Decoders.BahdanauMonotonicDecoder import BahdanauMonotonicDecoder
 from Decoders.StackedBahdanauDecoder import StackedBahdanauDecoder
 from Decoders.StackedEncBahdanauDecoder import StackedEncBahdanauDecoder
 from Decoders.LuongDecoder import LuongDecoder
+from Decoders.StackedEncLuongDecoder import StackedEncLuongDecoder
 from Decoders.LuongMonotonicDecoder import LuongMonotonicDecoder
 
 class Model:
@@ -153,6 +155,8 @@ class Model:
                 #MonorowEncoder(self).createGraph()
                 self.monoenc = MonorowEncoder(self)
                 self.monoenc.createGraph()
+            elif self.encoder == 'simpleEnc':
+                SimpleEncoder(self).createGraph()
             elif self.encoder == 'birowEnc':
                 BirowEncoder(self).createGraph()
             elif self.encoder == 'monocolEnc':
@@ -187,6 +191,8 @@ class Model:
                 StackedBahdanauDecoder(self).createGraph()
             elif self.decoder == 'stackedencbahdanauDec':
                 StackedEncBahdanauDecoder(self).createGraph()
+            elif self.decoder == 'stackedencluongDec':
+                StackedEncLuongDecoder(self).createGraph()
             else:
                 print(self.decoder + ' is no valid decoder type!')
                 quit()
@@ -199,7 +205,7 @@ class Model:
             quit()
         else:
             SimpleClassifier(self).createGraph()
-            sel.used_loss = 'classes'
+            self.used_loss = 'classes'
             if not only_inference:
                 self.groundtruth = tf.placeholder(dtype=tf.int32, shape=[None, \
                     self.num_classes])
@@ -302,6 +308,11 @@ class Model:
         # self.createOptimizer()
         saver.restore(self.session, self.save_path)
 
+    def restoreBestCheckpoint(self):
+        saver = tf.train.Saver()
+        # self.createOptimizer()
+        saver.restore(self.session, self.best_path)
+
     def save(self):
         print('#############################################################')
         print('#############################################################')
@@ -322,7 +333,7 @@ class Model:
         print('#############################################################')
         print('#############################################################')
 
-    def save(self):
+    def saveBest(self):
         print('#############################################################')
         print('#############################################################')
         print('#############################################################')

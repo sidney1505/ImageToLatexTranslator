@@ -8,7 +8,7 @@ class StackedQuadroEncoder(Encoder):
         Encoder.__init__(self, model)
 
     def createGraph(self):
-        self.model.number_of_layers = 3
+        self.model.number_of_layers = 2
         with tf.variable_scope(self.model.encoder, reuse=None):
             self.channels = self.model.encoder_size / 4
             self.encodeRowsBidirectionalStacked()
