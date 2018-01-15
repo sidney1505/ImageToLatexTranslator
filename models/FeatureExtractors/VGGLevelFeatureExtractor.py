@@ -147,6 +147,6 @@ class VGGLevelFeatureExtractor(FeatureExtractor):
             features = tflearn.layers.conv.max_pool_2d(features, [1,2], strides=[1,2])
             features = tf.contrib.layers.batch_norm(features)
             self.model.featureLevels.append(features)
-            reverse(self.model.featureLevels)
+            self.model.featureLevels = self.model.featureLevels[::-1]
 
             return features

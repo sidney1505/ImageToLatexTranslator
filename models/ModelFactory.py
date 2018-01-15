@@ -8,6 +8,7 @@ from FeatureExtractors.VGGFeatureExtractor import VGGFeatureExtractor
 from FeatureExtractors.VGGFinegrainedFeatureExtractor import VGGFinegrainedFeatureExtractor
 from FeatureExtractors.ResnetFeatureExtractor import ResnetFeatureExtractor
 from FeatureExtractors.DensenetFeatureExtractor import DensenetFeatureExtractor
+from FeatureExtractors.VGGLevelFeatureExtractor import VGGLevelFeatureExtractor
 # import classifiers
 from Classifiers.SimpleClassifier import SimpleClassifier
 # import encoders
@@ -19,6 +20,7 @@ from Encoders.BicolEncoder import BicolEncoder
 from Encoders.RowcolEncoder import RowcolEncoder
 from Encoders.QuadroEncoder import QuadroEncoder
 from Encoders.StackedQuadroEncoder import StackedQuadroEncoder
+from Encoders.LevelEncoder import LevelEncoder
 # import decoders
 from Decoders.SimpleDecoder import SimpleDecoder
 from Decoders.SimplegruDecoder import SimplegruDecoder
@@ -136,6 +138,8 @@ class Model:
                 self.features = ResnetFeatureExtractor(self).createGraph()
             elif self.feature_extractor == 'densenetFe':
                 self.features =DensenetFeatureExtractor(self).createGraph()
+            elif self.feature_extractor == 'levelFe':
+                self.features =VGGLevelFeatureExtractor(self).createGraph()
             else:
                 print(self.feature_extractor + ' is no valid feature extractor!')
                 quit()
@@ -171,6 +175,8 @@ class Model:
                 QuadroEncoder(self).createGraph()
             elif self.encoder == 'stackedquadroEnc':
                 StackedQuadroEncoder(self).createGraph()
+            elif self.encoder == 'levelEnc':
+                LevelEncoder(self).createGraph()
             else:
                 print(self.encoder + ' is no valid encoder type!')
                 quit()

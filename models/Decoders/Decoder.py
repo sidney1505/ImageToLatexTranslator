@@ -37,9 +37,11 @@ class Decoder():
                     decoder_emb_inp, nr_target, embedding, 0.0)
                 train_decoder = tf.contrib.seq2seq.BasicDecoder(decodercell, \
                     trainhelper, self.initial_state, output_layer=projection_layer)
+                # code.interact(local=dict(globals(), **locals()))
                 train_final_outputs, train_final_state, train_final_sequence_lengths = \
-                    tf.contrib.seq2seq.dynamic_decode(train_decoder,\
-                    maximum_iterations=self.model.max_num_tokens)
+                    tf.contrib.seq2seq.dynamic_decode( \
+                        train_decoder, \
+                        maximum_iterations=self.model.max_num_tokens)
                 self.model.train_energy = train_final_outputs[0]
                 self.model.train_distribution = tf.nn.softmax(self.model.train_energy)
                 self.model.train_prediction = tf.argmax(self.model.train_distribution, axis=-1)

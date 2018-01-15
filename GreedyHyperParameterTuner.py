@@ -101,7 +101,7 @@ def main(args):
     #sess = tf.Session()
     #print('greedy hyper parameter main')
     ght = GreedyHyperparamterTuner()
-    #trainer.trainModel()
+    trainer.trainModel()
     code.interact(local=dict(globals(), **locals()))
 
 if __name__ == '__main__':
