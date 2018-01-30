@@ -30,13 +30,13 @@ class Trainer:
         assert os.path.exists(self.dataset_dir), \
             "Dataset directory doesn't exists!"
         self.tmp_dir = tmp_dir
-        self.capacity = capacity / 8
+        self.capacity = capacity / 5
         # standart values for the hyperparameters
         self.mode = 'e2e'
-        self.feature_extractor = 'levelFe'
+        self.feature_extractor = 'flevelFe'
         self.encoder = 'levelEnc'
         self.decoder = 'bahdanauDec'
-        self.encoder_size = 2048
+        self.encoder_size = 32
         self.decoder_size = 512
         self.optimizer = 'momentum'
         self.min_epochs = 6

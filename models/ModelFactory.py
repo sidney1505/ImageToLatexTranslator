@@ -9,6 +9,7 @@ from FeatureExtractors.VGGFinegrainedFeatureExtractor import VGGFinegrainedFeatu
 from FeatureExtractors.ResnetFeatureExtractor import ResnetFeatureExtractor
 from FeatureExtractors.DensenetFeatureExtractor import DensenetFeatureExtractor
 from FeatureExtractors.VGGLevelFeatureExtractor import VGGLevelFeatureExtractor
+from FeatureExtractors.VGGFLevelFeatureExtractor import VGGFLevelFeatureExtractor
 # import classifiers
 from Classifiers.SimpleClassifier import SimpleClassifier
 # import encoders
@@ -41,6 +42,7 @@ class Model:
         self.session = tf.Session()
         # temporory solution
         self.num_features = 512
+        self.beamsearch = False
         #
         if loaded:
             # load parameters from given directory
@@ -140,6 +142,8 @@ class Model:
                 self.features =DensenetFeatureExtractor(self).createGraph()
             elif self.feature_extractor == 'levelFe':
                 self.features =VGGLevelFeatureExtractor(self).createGraph()
+            elif self.feature_extractor == 'flevelFe':
+                self.features =VGGFLevelFeatureExtractor(self).createGraph()
             else:
                 print(self.feature_extractor + ' is no valid feature extractor!')
                 quit()
@@ -256,15 +260,21 @@ class Model:
             self.optimizer
 
     def trainStep(self, inp, groundtruth):
+        '''
+        Propagates one Minibatch through the network and updates the weights accordingly.
+        inp : B x H x W x 1
+        groundtruth: B x L
+        '''
         feed_dict={self.input: inp, self.groundtruth: groundtruth, self.is_training:True, \
             self.keep_prob:0.5}
-        # code.interact(local=dict(globals(), **locals()))
-        #code.interact(local=dict(globals(), **locals()))
-
-        _,self.current_train_loss, self.current_infer_loss, self.current_train_prediction, \
+        _, self.current_train_loss, self.current_infer_loss, self.current_train_prediction, \
             self.current_infer_prediction = self.session.run([\
-            self.update_step, self.train_loss, self.infer_loss, self.train_prediction, \
-            self.infer_prediction], feed_dict=feed_dict)
+                self.update_step, \
+                self.train_loss, \
+                self.infer_loss, \
+                self.train_prediction, \
+                self.infer_prediction], feed_dict=feed_dict)
+        #
         if self.current_step % 1000 == 0 and self.current_step != 0:
             print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
             print('global step: ' + str(self.current_step))
@@ -272,37 +282,50 @@ class Model:
             self.printTrainableVariables()
             print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
             self.save()
-        '''if self.used_loss == 'label':
-            self.current_train_prediction = self.__argmaxs(self.current_train_prediction)
-            self.current_infer_prediction = self.__argmaxs(self.current_infer_prediction)
-            self.current_infer_prediction = \
-                self.__fillWithEndTokens(self.current_infer_prediction)
-            self.current_infer_prediction = self.current_infer_prediction.astype(int)'''
+        # calculate accuracies
         self.current_train_accuracy = self.calculateAccuracy( \
             self.current_train_prediction, groundtruth)
         self.current_infer_accuracy = self.calculateAccuracy( \
             self.current_infer_prediction, groundtruth)
+        # increase current step
         self.current_step  = self.current_step + 1
 
     def valStep(self, inp, groundtruth):
+        '''
+        Propagates one Minibatch through the network without updating the weights.
+        inp : B x H x W x 1
+        groundtruth: B x L
+        '''
+        # decide whether beamsearch or greedy search is used.
+        self.beamseach = True
+        #
         feed_dict={self.input: inp, self.groundtruth:groundtruth,\
             self.is_training:False, self.keep_prob:1.0}
         self.current_train_loss, self.current_infer_loss,self.current_train_prediction,\
-            self.current_infer_prediction = self.session.run([self.train_loss, \
-            self.infer_loss, self.train_prediction, self.infer_prediction], \
-            feed_dict=feed_dict)
+            self.current_infer_prediction = self.session.run([
+                self.train_loss, \
+                self.infer_loss, \
+                self.train_prediction, \
+                self.infer_prediction], \
+                feed_dict=feed_dict)
+        # calculate accuracies
         self.current_train_accuracy = self.calculateAccuracy( \
             self.current_train_prediction, groundtruth)
         self.current_infer_accuracy = self.calculateAccuracy( \
             self.current_infer_prediction, groundtruth)
 
     def testStep(self, inp):
+        self.beamsearch = True
         feed_dict={self.input: inp, self.is_training:False, self.keep_prob:1.0}
-        self.current_infer_prediction = self.session.run(self.infer_prediction, \
-            feed_dict=feed_dict)
-        #top_k = self.session.run(self.top_k, feed_dict=feed_dict)
-        #print(top_k.shape)
-        #code.interact(local=dict(globals(), **locals()))
+        self.current_infer_prediction, self.current_attention_maps, \
+            self.current_greedy_predictions = self.session.run(self.infer_prediction, \
+                feed_dict=feed_dict)
+
+    def visualizeAttention(self, inp):
+        self.beamsearch = False
+        feed_dict={self.input: inp, self.is_training:False, self.keep_prob:1.0}
+        self.current_infer_prediction, self.current_attention_maps = \
+            self.session.run([self.infer_prediction, self.attention_maps], feed_dict=feed_dict)
 
     def predict(self, wanted, inp):
         feed_dict={self.input: inp, self.is_training:False, self.keep_prob:1.0}

@@ -7,7 +7,8 @@ import code
 class LevelEncoder(Encoder):
     def __init__(self, model):
         Encoder.__init__(self, model)
-        encoder_size = 64
+        encoder_size = 64 # self.model.encoder_size # prev 64
+        # self.channels =  [4 * encoder_size, 2 * encoder_size, encoder_size]
         self.channels =  [4 * encoder_size, 2 * encoder_size, encoder_size]
 
     def encodeLevel(self, features, initial_state, direction='rows', level=0):
@@ -176,7 +177,7 @@ class LevelEncoder(Encoder):
     def createGraph(self):
         '''
         '''
-        assert len(self.channels) == len(self.model.featureLevels)
+        #assert len(self.channels) == len(self.model.featureLevels)
         shape = tf.shape(self.model.featureLevels[0])
         batchsize = shape[0]
         height = shape[1]

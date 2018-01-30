@@ -59,22 +59,29 @@ class Decoder():
                 self.model.infer_distribution = tf.nn.softmax(self.model.infer_energy)
                 self.model.infer_prediction = tf.argmax(self.model.infer_distribution, axis=2)
             else:
-                beamsearch = True
-                beamwidth = 5
-                if not beamsearch:
+                '''with tf.variable_scope('greedy', reuse=None):
+                    self.model.beamsearch = False
                     decodercell = self.createDecoderCell()
                     # using the infer helper
                     inferhelper = tf.contrib.seq2seq.GreedyEmbeddingHelper(embedding, \
                         start_tokens, END_SYMBOL)
-                    infer_decoder = tf.contrib.seq2seq.BasicDecoder(decodercell, \
-                        inferhelper, self.initial_state, output_layer=projection_layer)
+                    infer_decoder = tf.contrib.seq2seq.BasicDecoder( \
+                        decodercell, \
+                        inferhelper, \
+                        self.initial_state, \
+                        output_layer=projection_layer)
                     infer_final_outputs, infer_final_state, infer_final_sequence_lengths = \
                         tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
                         maximum_iterations=self.model.max_num_tokens)
-                    self.model.infer_energy = infer_final_outputs[0]
-                    self.model.infer_distribution = tf.nn.softmax(self.model.infer_energy)
-                    self.model.infer_prediction = tf.argmax(self.model.infer_distribution, axis=2)
-                else:
+                    self.model.greedy_infer_energy = infer_final_outputs[0]
+                    self.model.greedy_infer_distribution = tf.nn.softmax( \
+                        self.model.greedy_infer_energy)
+                    self.model.greedy_infer_prediction = tf.argmax( \
+                        self.model.greedy_infer_distribution, axis=2)
+                    self.model.attention_maps = infer_final_state[0].alignment_history.stack()'''
+                with tf.variable_scope('beamsearch', reuse=None):
+                    beamwidth = 5
+                    self.model.beamsearch = True
                     self.batchsize = self.batchsize * beamwidth
                     self.model.refined_features = tf.contrib.seq2seq.tile_batch( \
                         self.model.refined_features, beamwidth)
