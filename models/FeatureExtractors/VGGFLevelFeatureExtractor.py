@@ -74,6 +74,7 @@ class VGGFLevelFeatureExtractor(FeatureExtractor):
                 features = tf.nn.bias_add(features, b2)
                 features = tf.nn.relu(features)
 
+            self.model.reduction_rate = [2,2]
             self.model.featureLevels.append(features)
             features = tflearn.layers.conv.max_pool_2d(features, [2,1], strides=[2,1])
             features = tf.contrib.layers.batch_norm(features)

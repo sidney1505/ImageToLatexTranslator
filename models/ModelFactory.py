@@ -239,6 +239,7 @@ class Model:
                 #print(seed.shape)
             self.save()
             self.__saveSeeds()
+            self.saveBest()
         # code.interact(local=dict(globals(), **locals()))
         #tf.summary.histogram('predictionHisto', self.prediction)
         #tf.summary.scalar('predictionAvg', tf.reduce_mean(self.prediction))
@@ -317,9 +318,9 @@ class Model:
     def testStep(self, inp):
         self.beamsearch = True
         feed_dict={self.input: inp, self.is_training:False, self.keep_prob:1.0}
-        self.current_infer_prediction, self.current_attention_maps, \
-            self.current_greedy_predictions = self.session.run(self.infer_prediction, \
-                feed_dict=feed_dict)
+        self.current_infer_prediction, self.current_attention_maps = \
+            self.session.run([self.infer_prediction, self.attention_maps], feed_dict=feed_dict)
+        code.interact(local=dict(globals(), **locals()))
 
     def visualizeAttention(self, inp):
         self.beamsearch = False

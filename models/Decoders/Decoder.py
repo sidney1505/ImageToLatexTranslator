@@ -1,6 +1,7 @@
 import code
 import tensorflow as tf
 from tensorflow.python.layers import core as layers_core
+# code.interact(local=dict(globals(), **locals()))
 
 class Decoder():
     def __init__(self, model):
@@ -37,7 +38,6 @@ class Decoder():
                     decoder_emb_inp, nr_target, embedding, 0.0)
                 train_decoder = tf.contrib.seq2seq.BasicDecoder(decodercell, \
                     trainhelper, self.initial_state, output_layer=projection_layer)
-                # code.interact(local=dict(globals(), **locals()))
                 train_final_outputs, train_final_state, train_final_sequence_lengths = \
                     tf.contrib.seq2seq.dynamic_decode( \
                         train_decoder, \
@@ -59,44 +59,71 @@ class Decoder():
                 self.model.infer_distribution = tf.nn.softmax(self.model.infer_energy)
                 self.model.infer_prediction = tf.argmax(self.model.infer_distribution, axis=2)
             else:
-                '''with tf.variable_scope('greedy', reuse=None):
-                    self.model.beamsearch = False
-                    decodercell = self.createDecoderCell()
-                    # using the infer helper
-                    inferhelper = tf.contrib.seq2seq.GreedyEmbeddingHelper(embedding, \
-                        start_tokens, END_SYMBOL)
-                    infer_decoder = tf.contrib.seq2seq.BasicDecoder( \
-                        decodercell, \
-                        inferhelper, \
-                        self.initial_state, \
-                        output_layer=projection_layer)
-                    infer_final_outputs, infer_final_state, infer_final_sequence_lengths = \
-                        tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
-                        maximum_iterations=self.model.max_num_tokens)
-                    self.model.greedy_infer_energy = infer_final_outputs[0]
-                    self.model.greedy_infer_distribution = tf.nn.softmax( \
-                        self.model.greedy_infer_energy)
-                    self.model.greedy_infer_prediction = tf.argmax( \
-                        self.model.greedy_infer_distribution, axis=2)
-                    self.model.attention_maps = infer_final_state[0].alignment_history.stack()'''
-                with tf.variable_scope('beamsearch', reuse=None):
-                    beamwidth = 5
-                    self.model.beamsearch = True
-                    self.batchsize = self.batchsize * beamwidth
-                    self.model.refined_features = tf.contrib.seq2seq.tile_batch( \
-                        self.model.refined_features, beamwidth)
-                    self.model.input_summary = tf.contrib.seq2seq.tile_batch( \
-                        self.model.input_summary, beamwidth)
-                    decodercell = self.createDecoderCell()
-                    infer_decoder = tf.contrib.seq2seq.BeamSearchDecoder(decodercell, embedding, \
-                        start_tokens, END_SYMBOL, self.initial_state, beamwidth, \
-                        projection_layer)
-                    infer_final_outputs, infer_final_state, infer_final_sequence_lengths = \
-                        tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
-                        maximum_iterations=self.model.max_num_tokens)
-                    self.model.top_k = tf.transpose(infer_final_outputs[0],[2,0,1])
-                    self.model.infer_prediction = self.model.top_k[0]
-                    # code.interact(local=dict(globals(), **locals()))
+                # with tf.variable_scope('greedy', reuse=None):
+                '''self.model.beamsearch = False
+                greedy_decodercell = self.createDecoderCell()
+                # using the infer helper
+                greedy_inferhelper = tf.contrib.seq2seq.GreedyEmbeddingHelper(embedding, \
+                    start_tokens, END_SYMBOL)
+                greedy_infer_decoder = tf.contrib.seq2seq.BasicDecoder( \
+                    greedy_decodercell, \
+                    greedy_inferhelper, \
+                    self.initial_state, \
+                    output_layer=projection_layer)
+                greedy_final_outputs, greedy_final_state, greedy_final_sequence_lengths = \
+                    tf.contrib.seq2seq.dynamic_decode(greedy_infer_decoder, \
+                    maximum_iterations=self.model.max_num_tokens)
+                self.model.greedy_infer_energy = greedy_final_outputs[0]
+                self.model.greedy_infer_distribution = tf.nn.softmax( \
+                    self.model.greedy_infer_energy)
+                self.model.greedy_infer_prediction = tf.argmax( \
+                    self.model.greedy_infer_distribution, axis=2)
+                self.model.attention_maps = greedy_final_state.alignment_history.stack()'''
+                #
+                self.model.beamsearch = False
+                decodercell = self.createDecoderCell()
+                # using the infer helper
+                inferhelper = tf.contrib.seq2seq.GreedyEmbeddingHelper(embedding, \
+                    start_tokens, END_SYMBOL)
+                infer_decoder = tf.contrib.seq2seq.BasicDecoder( \
+                    decodercell, \
+                    inferhelper, \
+                    self.initial_state, \
+                    output_layer=projection_layer)
+                final_outputs, final_state, final_sequence_lengths = \
+                    tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
+                    maximum_iterations=self.model.max_num_tokens)
+                self.model.infer_energy = final_outputs[0]
+                self.model.infer_distribution = tf.nn.softmax( \
+                    self.model.infer_energy)
+                self.model.infer_prediction = tf.argmax( \
+                    self.model.infer_distribution, axis=2)
+                attention_maps = final_state.alignment_history.stack()
+                attention_maps = tf.reshape(attention_maps, )
+                self.model.attention_maps
+                '''# with tf.variable_scope('beamsearch', reuse=tf.AUTO_REUSE):
+                beamwidth = 5
+                self.model.beamsearch = True
+                self.batchsize = self.batchsize * beamwidth
+                self.model.refined_features = tf.contrib.seq2seq.tile_batch( \
+                    self.model.refined_features, beamwidth)
+                self.model.input_summary = tf.contrib.seq2seq.tile_batch( \
+                    self.model.input_summary, beamwidth)
+                decodercell = self.createDecoderCell()
+                infer_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
+                    decodercell, \
+                    embedding, \
+                    start_tokens, \
+                    END_SYMBOL, \
+                    self.initial_state, \
+                    beamwidth, \
+                    projection_layer)
+                infer_final_outputs, infer_final_state, infer_final_sequence_lengths = \
+                    tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
+                    maximum_iterations=self.model.max_num_tokens)
+                self.model.top_k = tf.transpose(infer_final_outputs[0],[2,0,1])
+                self.model.infer_prediction = self.model.top_k[0]
+                # code.interact(local=dict(globals(), **locals()))'''
 
 
     def getFirstEndtokens(self, inp):
@@ -110,3 +137,35 @@ class Decoder():
 
     def createDecoderCell(self):
         raise NotImplementedError
+
+    def unpool(self, features, level, sh=2, sw=2):
+        '''
+        Unpools the encoder features in order to be able to concatenate levels.
+        input: B x H x W x C
+        returns: B x sh*H x sw*W x C
+        '''
+        assert level < len(self.channels) - 1
+        shape = tf.shape(features)
+        batchsize = shape[0]
+        height = shape[1]
+        width = shape[2]
+        channels = features.shape[3].value
+        # vertical unpooling
+        nfeatures = tf.expand_dims(features, 1)
+        nfeatures = tf.tile(nfeatures, [1,sh,1,1,1])
+        nfeatures = tf.transpose(nfeatures, [0,2,1,3,4])
+        nfeatures = tf.reshape( \
+            nfeatures, \
+            [batchsize, sh * height, width, channels])
+        # horizontal unpooling
+        nfeatures = tf.expand_dims(nfeatures, 2)
+        nfeatures = tf.tile(nfeatures, [1,1,sw,1,1])
+        nfeatures = tf.transpose(nfeatures, [0,1,3,2,4])
+        nfeatures = tf.reshape( \
+            nfeatures, \
+            [batchsize, sh * height, sw * width, channels])
+        # trim to exact size of the feature level
+        shape_ref = tf.shape(self.model.featureLevels[level + 1])
+        height_ref = shape_ref[1]
+        width_ref = shape_ref[2]
+        return nfeatures[:batchsize, :height_ref, :width_ref]
