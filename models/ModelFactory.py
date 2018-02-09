@@ -1,4 +1,4 @@
-import code, os, shutil, tflearn, datetime, sys
+import code, os, shutil, tflearn, datetime, sys, git
 import tensorflow as tf
 import numpy as np
 # import feature extractors
@@ -85,9 +85,11 @@ class Model:
             # create directory for the model and store the parameters there
             if not os.path.exists(model_dir):
                 os.makedirs(model_dir)
+            timestamp = str(datetime.datetime.now()).replace(' ','').replace(':','')
+            timestamp = timestamp.replace('.','').replace('-','')
             model_dir = model_dir + '/' + feature_extractor + '_' + encoder + '_' + \
                 decoder + '_' + str(encoder_size) + '_' + str(decoder_size) + '_' + \
-                optimizer + '_' + str(datetime.datetime.now())
+                optimizer + '_' + timestamp
             if not os.path.exists(model_dir):
                 os.makedirs(model_dir)
             self.model_dir = model_dir
@@ -120,6 +122,14 @@ class Model:
             self.writeParam('current_step',str(self.current_step))
             self.current_millis = 0
             self.writeParam('current_millis',str(self.current_millis))
+            repo = git.Repo(search_parent_directories=True)
+            sha = repo.head.object.hexsha
+            self.writeParam('git_hash',str(sha))
+        #
+        self.attention_map_dir = model_dir + '/attention_maps'
+        if not os.path.exists(self.attention_map_dir):
+            os.makedirs(self.attention_map_dir)
+        #
         self.num_classes = len(self.vocabulary)
         self.only_inference = only_inference
         # placeholders which are necessary to seperate phases
@@ -318,15 +328,16 @@ class Model:
     def testStep(self, inp):
         self.beamsearch = True
         feed_dict={self.input: inp, self.is_training:False, self.keep_prob:1.0}
-        self.current_infer_prediction, self.current_attention_maps = \
-            self.session.run([self.infer_prediction, self.attention_maps], feed_dict=feed_dict)
-        code.interact(local=dict(globals(), **locals()))
+        self.current_infer_prediction = \
+            self.session.run(self.infer_prediction, feed_dict=feed_dict)
 
-    def visualizeAttention(self, inp):
+    def attentionVisualization(self, inp):
         self.beamsearch = False
         feed_dict={self.input: inp, self.is_training:False, self.keep_prob:1.0}
         self.current_infer_prediction, self.current_attention_maps = \
-            self.session.run([self.infer_prediction, self.attention_maps], feed_dict=feed_dict)
+            self.session.run(
+                [self.infer_prediction, self.attention_maps], \
+                feed_dict=feed_dict)
 
     def predict(self, wanted, inp):
         feed_dict={self.input: inp, self.is_training:False, self.keep_prob:1.0}
@@ -534,14 +545,6 @@ class Model:
         #    print('exception in label loss')
         #    print(sys.exc_info())
         #    code.interact(local=dict(globals(), **locals()))
-
-    # temporary solution
-    def setMaxNumTokens(self, new_max_num_tokens):
-        if self.max_num_tokens != new_max_num_tokens:
-            self.max_num_tokens = new_max_num_tokens
-            self.groundtruth = tf.placeholder(dtype=tf.int32, shape=[None, \
-                self.max_num_tokens])
-            self.__useLabelLoss()
 
     # indicates to fit the predicted classes to the gold classes as objective
     def __useClassesLoss(self):

@@ -3,6 +3,7 @@ import matplotlib as mpl
 mpl.use('Agg')
 mpl.rcParams['xtick.labelsize'] = 7
 import matplotlib.pyplot as plt
+from PIL import Image
 import numpy as np
 import distance
 import code
@@ -207,7 +208,27 @@ class Trainer:
             train_last_loss = train_loss
             val_last_loss = val_loss
 
-    def __iterateOneEpoch(self, phase):
+    def testModel(self):
+        self.best = True
+        self.loadModel(self.model.model_dir, only_inference=True)
+        train_loss, train_accuracy, infer_loss, test_infer_accuracy = \
+            self.__iterateOneEpoch('test')
+        print('model testing is finished!')
+        path = self.tmp_dir + '/' + feature_extractor + '_' + encoder + '_' + decoder + '_' +\
+            encoder_size + '_' + decoder_size + '_' + optimizer
+        if not os.path.exists(path):
+            self.writeLog(path, model_dir)
+
+    def extractAttentionMaps(self):
+        self.loadModel(self.model.model_dir, only_inference=True)
+        train_loss, train_accuracy, infer_loss, test_infer_accuracy = \
+            self.__iterateOneEpoch('test', True)
+
+    def __iterateOneEpoch(self, phase, visualize_attention=False):
+        #
+        if visualize_attention:
+            attention_counter = 0
+        #
         if self.model.used_loss == 'classes':
             false2false = np.zeros(self.model.num_classes)
             false2true = np.zeros(self.model.num_classes)
@@ -256,12 +277,16 @@ class Trainer:
                 elif phase == 'val':
                     self.model.valStep(minibatch_images, minigroundtruth)
                 if phase == 'test':
-                    self.model.testStep(minibatch_images)
+                    if visualize_attention:
+                        self.model.attentionVisualization(minibatch_images)
+                    else:
+                        self.model.testStep(minibatch_images)
                     self.model.current_train_loss = 0
                     self.model.current_train_accuracy = 0
                     self.model.current_infer_loss = 0
                     self.model.current_infer_accuracy = self.model.calculateAccuracy( \
                         self.model.current_infer_prediction, minigroundtruth)
+                #
                 train_losses.append(self.model.current_train_loss)
                 train_accuracies.append(self.model.current_train_accuracy)
                 print(str(self.model.current_train_loss) + ' : ' + \
@@ -322,23 +347,36 @@ class Trainer:
                             line = line + label_gold[:-1] + '\t' + label_pred[:-1] + '\t' + \
                                 '-1' + '\t' + '-1' + '\n'
                             lines = lines + line
-                        '''else:
-                            for token in range(minigroundtruth.shape[1]):
-                                if minigroundtruth[batch][token] == 0 and \
-                                        minibatch_predictions[batch][token] == 0:
-                                    false2false[token] = false2false[token] + 1
-                                elif minigroundtruth[batch][token] == 0 and \
-                                        minibatch_predictions[batch][token] == 1:
-                                    false2true[token] = false2true[token] + 1
-                                elif minigroundtruth[batch][token] == 1 and \
-                                        minibatch_predictions[batch][token] == 1:
-                                    true2true[token] = true2true[token] + 1
-                                elif minigroundtruth[batch][token] == 1 and \
-                                        minibatch_predictions[batch][token] == 0:
-                                    true2false[token] = true2false[token] + 1
-                                else:
-                                    print('error!!!')
-                                    code.interact(local=dict(globals(), **locals()))'''
+                        #
+                        if visualize_attention:
+                            l = min(len(label_pred.split(' ')), self.model.max_num_tokens)
+                            if attention_counter > 10:
+                                return np.mean(train_losses), np.mean(train_accuracies), \
+                                    np.mean(infer_losses), np.mean(infer_accuracies)
+                            attention_map = self.model.current_attention_maps[batch][:l]
+                            # increases lumination
+                            attention_path = self.model.attention_map_dir + '/sample' + \
+                                str(attention_counter)
+                            if not os.path.exists(attention_path):
+                                os.makedirs(attention_path)
+                                gtimga = np.squeeze(minibatch_images[batch])
+                                gtimga = (gtimga * 255).astype('int32')
+                                gtimg = Image.fromarray(gtimga, None)
+                                gtimg = gtimg.convert('RGB')
+                                gtimg.save(attention_path + '/gt.png')
+                                for token in range(l):
+                                    l = label_pred.split(' ')[token]
+                                    att = attention_map[token]
+                                    att *= (1 / np.amax(att))
+                                    att = (att * 255).astype('int32')
+                                    img = Image.fromarray(att, None)
+                                    img = img.convert('RGB')
+                                    img.save(attention_path + '/'+ str(token) + '_' + \
+                                        l + '.png')
+                                    code.interact(local=dict(globals(), **locals()))
+                            else:
+                                print('this error should not have happened!')
+                            attention_counter += 1
                     if self.model.used_loss == 'label':
                         print('')
                         print(label_gold)
@@ -346,26 +384,32 @@ class Trainer:
                         print(label_pred)
                         print('')
             else:
-                self.model.writeParamInList('train/losses_' + 
-                    str(self.model.current_epoch), str(np.mean(train_losses)))
-                self.model.writeParamInList('train/accuracies_' + 
-                    str(self.model.current_epoch), str(np.mean(train_accuracies)))
-                self.model.writeParamInList('train/infer_losses_' + \
-                    str(self.model.current_epoch), str(np.mean(infer_losses)))
-                self.model.writeParamInList('train/infer_accuracies_' + \
-                    str(self.model.current_epoch), str(np.mean(infer_accuracies)))
+                try:
+                    self.model.writeParamInList('train/losses_' + 
+                        str(self.model.current_epoch), str(np.mean(train_losses)))
+                    self.model.writeParamInList('train/accuracies_' + 
+                        str(self.model.current_epoch), str(np.mean(train_accuracies)))
+                    self.model.writeParamInList('train/infer_losses_' + \
+                        str(self.model.current_epoch), str(np.mean(infer_losses)))
+                    self.model.writeParamInList('train/infer_accuracies_' + \
+                        str(self.model.current_epoch), str(np.mean(infer_accuracies)))
+                except Exception:
+                    print('params couldnt be saved!')
             batch_images, minibatchsize, batch_it, \
                 groundtruth, new_iteration, batch_classes_true, \
                 batch_imgnames, batch_labels = self.__loadBatch(phase, batch_it)
         if phase != 'train':
-            self.model.writeParam(phase + '_results/epoch' + \
-                str(self.model.current_epoch), lines)
             absolute_acc = float(samples_correct) / float(num_samples)
-            self.model.writeParam(phase + '_absolute_accuracy/epoch' + \
-                str(self.model.current_epoch), str(absolute_acc))
-            self.model.writeParam(phase + '_token_accuracy/epoch' + \
-                str(self.model.current_epoch), str(np.mean(infer_accuracies)))
             print('abs: ' + str(absolute_acc) + ', tok: ' + str(np.mean(infer_accuracies)))
+            try:
+                self.model.writeParam(phase + '_results/epoch' + \
+                    str(self.model.current_epoch), lines)
+                self.model.writeParam(phase + '_absolute_accuracy/epoch' + \
+                    str(self.model.current_epoch), str(absolute_acc))
+                self.model.writeParam(phase + '_token_accuracy/epoch' + \
+                    str(self.model.current_epoch), str(np.mean(infer_accuracies)))
+            except Exception:
+                print('params couldnt be saved!')
             '''if self.model.used_loss == 'classes':
                 with open(self.model.model_dir + '/confusion.npz', 'w') as fout:
                     np.savez(fout,false2false=false2false,false2true=false2true, \
@@ -471,18 +515,6 @@ class Trainer:
         print('#############################################################')
         print('#############################################################')
         print('#############################################################')
-
-    def testModel(self):
-        self.best = True
-        self.loadModel(self.model.model_dir, only_inference=True)
-        train_loss, train_accuracy, infer_loss, test_infer_accuracy = \
-            self.__iterateOneEpoch('test')
-        print('model testing is finished!')
-        path = self.tmp_dir + '/' + feature_extractor + '_' + encoder + '_' + decoder + '_' +\
-            encoder_size + '_' + decoder_size + '_' + optimizer
-        if not os.path.exists(path):
-            self.writeLog(path, model_dir)
-        # code.interact(local=dict(globals(), **locals()))
 
     '''def renderImages(self, model_dir='', phase='test'):
         if model_dir == '':

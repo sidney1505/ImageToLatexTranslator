@@ -80,50 +80,59 @@ class Decoder():
                     self.model.greedy_infer_distribution, axis=2)
                 self.model.attention_maps = greedy_final_state.alignment_history.stack()'''
                 #
-                self.model.beamsearch = False
-                decodercell = self.createDecoderCell()
-                # using the infer helper
-                inferhelper = tf.contrib.seq2seq.GreedyEmbeddingHelper(embedding, \
-                    start_tokens, END_SYMBOL)
-                infer_decoder = tf.contrib.seq2seq.BasicDecoder( \
-                    decodercell, \
-                    inferhelper, \
-                    self.initial_state, \
-                    output_layer=projection_layer)
-                final_outputs, final_state, final_sequence_lengths = \
-                    tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
-                    maximum_iterations=self.model.max_num_tokens)
-                self.model.infer_energy = final_outputs[0]
-                self.model.infer_distribution = tf.nn.softmax( \
-                    self.model.infer_energy)
-                self.model.infer_prediction = tf.argmax( \
-                    self.model.infer_distribution, axis=2)
-                attention_maps = final_state.alignment_history.stack()
-                attention_maps = tf.reshape(attention_maps, )
-                self.model.attention_maps
-                '''# with tf.variable_scope('beamsearch', reuse=tf.AUTO_REUSE):
-                beamwidth = 5
-                self.model.beamsearch = True
-                self.batchsize = self.batchsize * beamwidth
-                self.model.refined_features = tf.contrib.seq2seq.tile_batch( \
-                    self.model.refined_features, beamwidth)
-                self.model.input_summary = tf.contrib.seq2seq.tile_batch( \
-                    self.model.input_summary, beamwidth)
-                decodercell = self.createDecoderCell()
-                infer_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
-                    decodercell, \
-                    embedding, \
-                    start_tokens, \
-                    END_SYMBOL, \
-                    self.initial_state, \
-                    beamwidth, \
-                    projection_layer)
-                infer_final_outputs, infer_final_state, infer_final_sequence_lengths = \
-                    tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
-                    maximum_iterations=self.model.max_num_tokens)
-                self.model.top_k = tf.transpose(infer_final_outputs[0],[2,0,1])
-                self.model.infer_prediction = self.model.top_k[0]
-                # code.interact(local=dict(globals(), **locals()))'''
+                if self.model.beamsearch == False:
+                    decodercell = self.createDecoderCell()
+                    # using the infer helper
+                    inferhelper = tf.contrib.seq2seq.GreedyEmbeddingHelper(embedding, \
+                        start_tokens, END_SYMBOL)
+                    infer_decoder = tf.contrib.seq2seq.BasicDecoder( \
+                        decodercell, \
+                        inferhelper, \
+                        self.initial_state, \
+                        output_layer=projection_layer)
+                    final_outputs, final_state, final_sequence_lengths = \
+                        tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
+                        maximum_iterations=self.model.max_num_tokens)
+                    self.model.infer_energy = final_outputs[0]
+                    self.model.infer_distribution = tf.nn.softmax( \
+                        self.model.infer_energy)
+                    self.model.infer_prediction = tf.argmax( \
+                        self.model.infer_distribution, axis=2)
+                    attention_maps = final_state.alignment_history.stack()
+                    self.model.att = attention_maps
+                    attention_maps = tf.transpose(attention_maps, [1,0,2])
+                    attention_maps = tf.reshape(attention_maps, [
+                        self.model.encoded_batchsize,
+                        self.model.max_num_tokens,
+                        self.model.encoded_height,
+                        self.model.encoded_width])
+                    self.model.attention_maps = self.unpoolAttentionMap( \
+                        attention_maps,
+                        self.model.height_reduction_rate,
+                        self.model.width_reduction_rate)
+                else:
+                    beamwidth = 5
+                    self.model.beamsearch = True
+                    self.batchsize = self.batchsize * beamwidth
+                    self.model.refined_features = tf.contrib.seq2seq.tile_batch( \
+                        self.model.refined_features, beamwidth)
+                    self.model.input_summary = tf.contrib.seq2seq.tile_batch( \
+                        self.model.input_summary, beamwidth)
+                    decodercell = self.createDecoderCell()
+                    infer_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
+                        decodercell, \
+                        embedding, \
+                        start_tokens, \
+                        END_SYMBOL, \
+                        self.initial_state, \
+                        beamwidth, \
+                        projection_layer)
+                    infer_final_outputs, infer_final_state, infer_final_sequence_lengths = \
+                        tf.contrib.seq2seq.dynamic_decode(infer_decoder, \
+                        maximum_iterations=self.model.max_num_tokens)
+                    self.model.top_k = tf.transpose(infer_final_outputs[0],[2,0,1])
+                    self.model.infer_prediction = self.model.top_k[0]
+                    # code.interact(local=dict(globals(), **locals()))
 
 
     def getFirstEndtokens(self, inp):
@@ -138,34 +147,33 @@ class Decoder():
     def createDecoderCell(self):
         raise NotImplementedError
 
-    def unpool(self, features, level, sh=2, sw=2):
+    def unpoolAttentionMap(self, features, sh=2, sw=2):
         '''
-        Unpools the encoder features in order to be able to concatenate levels.
-        input: B x H x W x C
-        returns: B x sh*H x sw*W x C
+        Unpools the attention maps in order to fit the images.
+        input: B x L x H / rh x W / rw
+        returns: B x L x H x W
         '''
-        assert level < len(self.channels) - 1
         shape = tf.shape(features)
         batchsize = shape[0]
-        height = shape[1]
-        width = shape[2]
-        channels = features.shape[3].value
+        num_tokens = shape[1]
+        height = shape[2]
+        width = shape[3]
         # vertical unpooling
-        nfeatures = tf.expand_dims(features, 1)
-        nfeatures = tf.tile(nfeatures, [1,sh,1,1,1])
-        nfeatures = tf.transpose(nfeatures, [0,2,1,3,4])
-        nfeatures = tf.reshape( \
-            nfeatures, \
-            [batchsize, sh * height, width, channels])
-        # horizontal unpooling
-        nfeatures = tf.expand_dims(nfeatures, 2)
-        nfeatures = tf.tile(nfeatures, [1,1,sw,1,1])
+        nfeatures = tf.expand_dims(features, 2)
+        nfeatures = tf.tile(nfeatures, [1,1,sh,1,1])
         nfeatures = tf.transpose(nfeatures, [0,1,3,2,4])
         nfeatures = tf.reshape( \
             nfeatures, \
-            [batchsize, sh * height, sw * width, channels])
+            [batchsize, num_tokens, sh * height, width])
+        # horizontal unpooling
+        nfeatures = tf.expand_dims(nfeatures, 4)
+        nfeatures = tf.tile(nfeatures, [1,1,1,1,sw])
+        nfeatures = tf.transpose(nfeatures, [0,1,2,4,3])
+        nfeatures = tf.reshape( \
+            nfeatures, \
+            [batchsize, num_tokens, sh * height, sw * width])
         # trim to exact size of the feature level
-        shape_ref = tf.shape(self.model.featureLevels[level + 1])
+        shape_ref = tf.shape(self.model.input)
         height_ref = shape_ref[1]
         width_ref = shape_ref[2]
-        return nfeatures[:batchsize, :height_ref, :width_ref]
+        return nfeatures[:batchsize, :num_tokens, :height_ref, :width_ref]
