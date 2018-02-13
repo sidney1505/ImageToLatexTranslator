@@ -1,5 +1,5 @@
 import tensorflow as tf
-import tflearn.layers.conv
+import tflearn.layers.conv, math
 from Encoder import Encoder
 import code
 # code.interact(local=dict(globals(), **locals()))
@@ -9,8 +9,10 @@ class LevelEncoder(Encoder):
         Encoder.__init__(self, model)
         encoder_size = self.model.encoder_size # prev 64
         # version a
-        self.channels =  [4 * encoder_size, 2 * encoder_size, encoder_size, encoder_size / 2]
+        self.channels =  [4 * encoder_size, 2 * encoder_size, 2 * encoder_size]
         # version b
+        # self.channels =  [4 * encoder_size, 2 * encoder_size, encoder_size]
+        # version a2
         # self.channels =  [2 * encoder_size, encoder_size]
 
     def encodeLevel(self, features, initial_state, direction='rows', level=0):
@@ -39,12 +41,14 @@ class LevelEncoder(Encoder):
         # "flattens" the tensor in order to put it in the RNN
         features = tf.reshape(features, [batchsize * x, y, channels])
         # build actual lstm states
-        initial_state = tf.reshape(initial_state, [2, batchsize * x, self.channels[level]])
+        channelsx = self.channels[level]
+        #
+        initial_state = tf.reshape(initial_state, [2, batchsize * x, channelsx])
         initial_state = tf.contrib.rnn.LSTMStateTuple(initial_state[0],initial_state[1])
         # create the encoding LSTM
         with tf.variable_scope(myscope + '_1', reuse=None):
-            rnncell_fw = tf.contrib.rnn.BasicLSTMCell(self.channels[level])
-            rnncell_bw = tf.contrib.rnn.BasicLSTMCell(self.channels[level])
+            rnncell_fw = tf.contrib.rnn.BasicLSTMCell(channelsx)
+            rnncell_bw = tf.contrib.rnn.BasicLSTMCell(channelsx)
             # B * X x Y x C, 2 x B * X x C' -> 2 x B * X x Y x C', 2 x 2 x B * X x C'
             features, states = tf.nn.bidirectional_dynamic_rnn( \
                 rnncell_fw, \
@@ -55,7 +59,7 @@ class LevelEncoder(Encoder):
                 parallel_iterations=1)
         # reorder and reshape dimensions from 2 x B * X x Y x C' to wanted B x H x W x 2 * C'
         features = tf.transpose(features, [1,2,0,3])
-        local_features = tf.reshape(features, [batchsize, x, y, 2 * self.channels[level]])
+        local_features = tf.reshape(features, [batchsize, x, y, 2 * channelsx])
         if direction == 'cols':
             local_features = tf.transpose(local_features, [0,2,1,3])
         # reorder and reshape dimensions from 2 x 2 x B * X x C' to wanted 2 x B x X x 2 * C'
@@ -65,13 +69,13 @@ class LevelEncoder(Encoder):
         h = tf.expand_dims(h,0)
         intermediate_features = tf.concat([c,h],0)
         intermediate_features = tf.reshape(
-            intermediate_features, [2, batchsize, x, 2 * self.channels[level]])
+            intermediate_features, [2, batchsize, x, 2 * channelsx])
         #
         intermediate_features_t = tf.concat( \
             [intermediate_features[0], intermediate_features[1]], -1)
         # create the "inner" LSTM
         with tf.variable_scope(myscope + '_2', reuse=None):
-            rnncell = tf.contrib.rnn.BasicLSTMCell(2 * self.channels[level])
+            rnncell = tf.contrib.rnn.BasicLSTMCell(2 * channelsx)
             # B x X x 2 * 2 * C', 2 x B x 2 * 2 * C' ->  B x X x 2 * 2 * C', 2 x B x 2 * 2 * C'
             _, states = tf.nn.dynamic_rnn( \
                 rnncell, \
@@ -126,22 +130,33 @@ class LevelEncoder(Encoder):
             initial_state, \
             [2, batchsize, s * n, current_channels])
         # fit number of channels
+        # the '- 1' is because the positional embedding is concatenated later
         myscope = 'updateInitialStates_' + direction + '_' + str(level)
         with tf.variable_scope(myscope, reuse=None):
             w = tf.get_variable( \
                 'weight', \
-                [current_channels, self.channels[level + 1]], \
+                [current_channels, self.channels[level + 1] - 1], \
                 tf.float32, \
                 tf.random_normal_initializer())
             b = tf.get_variable( \
                 'bias', \
-                [self.channels[level + 1]], \
+                [self.channels[level + 1] - 1], \
                 tf.float32, \
                 tf.random_normal_initializer())
             initial_state = tf.tensordot(initial_state,w,[[-1],[0]]) + b
         initial_state = tf.nn.tanh(initial_state)
         # trim to exact size of feature level
-        return initial_state[:2, :batchsize, :ref]
+        initial_state = initial_state[:2, :batchsize, :ref]
+        # append new positional embedding
+        new_n = tf.shape(initial_state)[2]
+        positional_embedding = tf.range(new_n)
+        positional_embedding = tf.expand_dims(positional_embedding, 1)
+        positional_embedding = tf.expand_dims(positional_embedding, 0)
+        positional_embedding = tf.expand_dims(positional_embedding, 0)
+        positional_embedding = tf.tile(positional_embedding, [2, batchsize, 1, 1]) # ???
+        positional_embedding = tf.cast(positional_embedding, tf.float32)
+        initial_state = tf.concat([initial_state,positional_embedding],-1)
+        return initial_state
 
     def unpool(self, features, level, sh=2, sw=2):
         '''
@@ -184,9 +199,8 @@ class LevelEncoder(Encoder):
         batchsize = shape[0]
         height = shape[1]
         width = shape[2]
-        # version a
-        # initial_state_rows = self.generatePositionalEmbeddings(height, batchsize)
-        # initial_state_cols = self.generatePositionalEmbeddings(width, batchsize)
+        #
+        is_version_a = True
         #
         features_in = self.model.featureLevels[0]
         local_features = None
@@ -196,10 +210,11 @@ class LevelEncoder(Encoder):
             # version b
             nheight = tf.shape(features_in)[1]
             nwidth = tf.shape(features_in)[2]
-            initial_state_rows = \
-                self.generatePositionalEmbeddings(nheight, batchsize, level)
-            initial_state_cols = \
-                self.generatePositionalEmbeddings(nwidth, batchsize, level)
+            if level == 0 or not is_version_a:
+                initial_state_rows = \
+                    self.generatePositionalEmbeddings(nheight, batchsize, level)
+                initial_state_cols = \
+                    self.generatePositionalEmbeddings(nwidth, batchsize, level)
             # rowwise encoding
             local_row_features, intermediate_row_features, global_row_features = \
                 self.encodeLevel( \
@@ -230,17 +245,17 @@ class LevelEncoder(Encoder):
                 local_features = self.unpool(local_features, level)
                 features_in = tf.concat( \
                     [local_features, self.model.featureLevels[level + 1]], -1)
-                # version b
-                '''initial_state_rows = self.updateInitialStates( \
-                    intermediate_row_features, \
-                    level, \
-                    tf.shape(self.model.featureLevels[level + 1])[1], \
-                    'rows')
-                initial_state_cols = self.updateInitialStates( \
-                    intermediate_col_features, \
-                    level, \
-                    tf.shape(self.model.featureLevels[level + 1])[2], \
-                    'cols')'''
+                if is_version_a:
+                    initial_state_rows = self.updateInitialStates( \
+                        intermediate_row_features, \
+                        level, \
+                        tf.shape(self.model.featureLevels[level + 1])[1], \
+                        'rows')
+                    initial_state_cols = self.updateInitialStates( \
+                        intermediate_col_features, \
+                        level, \
+                        tf.shape(self.model.featureLevels[level + 1])[2], \
+                        'cols')
         #
         shape_fine = tf.shape(self.model.featureLevels[-1])
         self.model.encoded_batchsize = shape_fine[0]
