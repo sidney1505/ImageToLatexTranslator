@@ -9,11 +9,11 @@ class LevelEncoder(Encoder):
         Encoder.__init__(self, model)
         encoder_size = self.model.encoder_size # prev 64
         # version a
-        self.channels =  [4 * encoder_size, 2 * encoder_size, 2 * encoder_size]
+        # self.channels =  [4 * encoder_size, 2 * encoder_size, 2 * encoder_size]
         # version b
         # self.channels =  [4 * encoder_size, 2 * encoder_size, encoder_size]
         # version a2
-        # self.channels =  [2 * encoder_size, encoder_size]
+        self.channels =  [encoder_size, encoder_size]
 
     def encodeLevel(self, features, initial_state, direction='rows', level=0):
         '''
