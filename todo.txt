@@ -1,10 +1,10 @@
--> Evaluator anlegen!!!
--> metriken verallgemeinern
--> stacked encoder
--> confusion matrix bei testdurchläufen
--> fehler nach länge gruppieren
--> attention maps extrahieren
--> crf's???
--> bounding boxes zur gt hizufügen
--> attention quantitativ evaluieren
--> supervised attention
+-> attention maps extraktion testen
+-> ausgaben auf alle 30s beschraenken
+-> adaboost artiges sampling
+-> gewichte in npz-arrays abspeichern
+-> inkrementelles trainieren ermöglichen
+-> trainer verallgemeinern
+-> parameter tuner verallgemeinern
+-> bounding boxes zur gt hizufügen???
+-> attention quantitativ evaluieren???
+-> supervised attention???

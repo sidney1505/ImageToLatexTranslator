@@ -106,21 +106,6 @@ class Trainer:
             # code.interact(local=dict(globals(), **locals()))
             self.train()
         self.testModel()
-        self.evaluateModel()
-
-    '''def evaluateModel(self):
-        test_result_path = self.model.model_dir + '/params/test_results/epoch' + \
-            str(self.model.current_epoch)
-        test_image_path = self.model.model_dir + 'rendered_test_images'
-        my_renderer.render_output(test_result_path, test_image_path)
-        e_test = Evaluator(self.model.model_dir)
-        e_test.evaluate()
-        val_result_path = self.model.model_dir + '/params/val_results/epoch' + \
-            str(self.model.current_epoch - 1)
-        val_image_path = self.model.model_dir + 'rendered_val_images'
-        my_renderer.render_output(val_result_path, val_image_path)
-        e_test = Evaluator(self.model.model_dir)
-        e_test.evaluate()'''
 
     def processData(self, preprocessing):
         for phase in ['train','val','test']:

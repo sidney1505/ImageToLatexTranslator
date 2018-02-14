@@ -243,8 +243,11 @@ class LevelEncoder(Encoder):
             #
             if level < len(self.model.featureLevels) - 1:
                 local_features = self.unpool(local_features, level)
-                features_in = tf.concat( \
-                    [local_features, self.model.featureLevels[level + 1]], -1)
+                # concat
+                #features_in = tf.concat( \
+                #    [local_features, self.model.featureLevels[level + 1]], -1)
+                # no concat
+                features_in = local_features
                 if is_version_a:
                     initial_state_rows = self.updateInitialStates( \
                         intermediate_row_features, \
