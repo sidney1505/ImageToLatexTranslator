@@ -1,6 +1,7 @@
 -> attention maps extraktion testen
 -> ausgaben auf alle 30s beschraenken
 -> adaboost artiges sampling
+-> soft dynamic time warping loss / earth mover loss
 -> gewichte in npz-arrays abspeichern
 -> inkrementelles trainieren ermöglichen
 -> trainer verallgemeinern

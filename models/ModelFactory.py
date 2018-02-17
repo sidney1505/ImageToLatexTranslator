@@ -279,12 +279,13 @@ class Model:
         feed_dict={self.input: inp, self.groundtruth: groundtruth, self.is_training:True, \
             self.keep_prob:0.5}
         _, self.current_train_loss, self.current_infer_loss, self.current_train_prediction, \
-            self.current_infer_prediction = self.session.run([\
+            self.current_infer_prediction, self.current_samplewise_losses = self.session.run([\
                 self.update_step, \
                 self.train_loss, \
                 self.infer_loss, \
                 self.train_prediction, \
-                self.infer_prediction], feed_dict=feed_dict)
+                self.infer_prediction, \
+                self.train_losses], feed_dict=feed_dict)
         #
         if self.current_step % 1000 == 0 and self.current_step != 0:
             print('|||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||')
@@ -517,8 +518,7 @@ class Model:
         with tf.variable_scope("labelLoss", reuse=None):
             gt = tf.transpose(self.groundtruth)
             gt_train = gt[:tf.shape(self.train_energy)[1]]
-            gt_train = tf.transpose(gt_train)
-            
+            gt_train = tf.transpose(gt_train)            
             #diff = self.max_num_tokens - tf.shape(self.train_pred)[1]
             #self.prediction_greedy = tf.pad(self.train_pred, [[0,0],[0,diff]])
             eos_gt = tf.argmax(gt_train, 1)
@@ -526,7 +526,13 @@ class Model:
             max_seq_length = tf.maximum(eos_gt, eos_pred)
             weights = tf.sequence_mask(max_seq_length, tf.shape(gt_train)[-1])
             weights = tf.cast(weights, tf.float32)
-            #code.interact(local=dict(globals(), **locals()))
+            # the loss per sample
+            gt_train_one_hot = tf.one_hot(gt_train, depth=self.num_classes)
+            self.train_losses = tf.losses.softmax_cross_entropy( \
+                gt_train_one_hot, \
+                self.train_energy,\
+                weights, reduction=tf.losses.Reduction.NONE)
+            # the loss per batch
             self.train_loss = tf.contrib.seq2seq.sequence_loss(self.train_energy,\
                 gt_train, weights)
             #
@@ -549,7 +555,6 @@ class Model:
     # indicates to fit the predicted classes to the gold classes as objective
     def __useClassesLoss(self):
         with tf.variable_scope("classesLoss", reuse=None):
-            #code.interact(local=dict(globals(), **locals()))
             loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=tf.to_float( \
                 self.groundtruth), logits=self.prediction)
             self.train_loss = tf.reduce_mean(loss)

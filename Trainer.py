@@ -28,10 +28,11 @@ class Trainer:
         self.dataset_dir = dataset_dir
         vocabulary_path = self.dataset_dir + '/vocabulary.txt'
         self.vocabulary = open(vocabulary_path).read() + '\n' + 'END'
+        self.end_token_key = len(self.vocabulary) - 1
         assert os.path.exists(self.dataset_dir), \
             "Dataset directory doesn't exists!"
         self.tmp_dir = tmp_dir
-        self.capacity = capacity / 5
+        self.capacity = capacity / 4
         # standart values for the hyperparameters
         self.mode = 'e2e'
         self.feature_extractor = 'flevelFe'
@@ -43,10 +44,32 @@ class Trainer:
         self.min_epochs = 6
         self.max_epochs = 50
         self.initial_learning_rate = 0.1
-        self.lr_decay = 0.1
+        self.lr_decay = 0.8
         # indicates whether and which preprocessed batches should be used
         self.preprocessing = ''
         self.best = True
+        # variables, that are needed for the sampling based training
+        self.train_batch_names = self.__getBatchNames('train') # names of the batches
+        self.number_batches = len(self.train_batch_names)
+        self.batches_per_epoch = 100
+        self.samples_per_batch = 1000
+        self.train_sample_losses = [] # trainloss of each sample
+        self.train_batch_avg_losses = []
+        for train_batch_name in self.train_batch_names:
+            train_batch = np.load(self.__getBatchDir('train') + '/' + train_batch_name)
+            train_labels = train_batch['labels']
+            train_batch_sample_losses = np.zeros(train_labels.shape[0])
+            for labelnr in range(train_labels.shape[0]):
+                weigth = 0
+                for tokennr in range(train_labels[labelnr].shape[0]):
+                    if train_labels[labelnr][tokennr] != self.end_token_key:
+                        weigth += 1
+                    else:
+                        break
+                train_batch_sample_losses[labelnr] = weigth
+            self.train_sample_losses.append(train_batch_sample_losses)
+            self.train_batch_avg_losses.append(np.mean(train_batch_sample_losses))
+
 
     def setModelParameters(self, mode, feature_extractor, encoder, decoder, encoder_size, \
             decoder_size, optimizer):
@@ -133,7 +156,9 @@ class Trainer:
                 assert batch_prediction.shape[0] == batch_images.shape[0]
                 batch_path = path +  '/batch' + str(batch_it) + '.npz'
                 with open(batch_path, 'w') as fout:
-                    np.savez(fout, images=batch_prediction, labels=batch_labels, \
+                    np.savez(fout, \
+                        images=batch_prediction, \
+                        labels=batch_labels, \
                         num_classes=self.model.num_classes, \
                         contained_classes_list=batch_classes_true, \
                         image_names=batch_imgnames)
@@ -144,21 +169,28 @@ class Trainer:
                     self.__loadBatch(phase, batch_it)
 
     def train(self):
-        # the training loop
         self.best = False
+        # initialize train sucess tracking variables
         train_last_loss = float('inf')
         val_last_loss = float('inf')
         val_last_infer_loss = float('inf')
+        # the higher it is, the harder problems are chosen
+        self.curriculum_level = 0.5 # is this the rigth choice???
+        # decides whether model is trained stochastically
+        stochastic_training = True
+        # the training loop
         while True:
             begin = time.time()
-            train_loss, train_accuracy, infer_loss, infer_accuracy = \
-                self.__iterateOneEpoch('train')
+            # run one train epoch
+            if stochastic_training:
+                train_loss, train_accuracy, infer_loss, infer_accuracy = \
+                    self.__iterateOneEpochStochastic()
+            else:
+                train_loss, train_accuracy, infer_loss, infer_accuracy = \
+                    self.__iterateOneEpoch('train')
+            # run the correspoing validation epoch
             val_loss, val_accuracy, val_infer_loss, val_infer_accuracy = \
                 self.__iterateOneEpoch('val')
-            '''a = (self.model.current_epoch + 1) / 10.0
-            l = 1.0 / a
-            train_loss, train_accuracy, infer_loss, infer_accuracy = l,a,l*2,a/2
-            val_loss, val_accuracy, val_infer_loss, val_infer_accuracy = l*3,a/3,l*4,a/4'''
             # updates the implicit parameters of the model            
             self.model.current_epoch = self.model.current_epoch + 1
             self.model.writeParam('current_epoch',self.model.current_epoch)
@@ -185,13 +217,15 @@ class Trainer:
             elif val_last_loss < val_loss and self.model.current_epoch > self.min_epochs:
                 print('model starts to overfit!')
                 break
-            elif val_last_infer_loss < val_infer_loss: # or self.model.current_epoch % 3 == 0:
-                self.model.decayLearningRate(self.lr_decay)
             else:
                 self.model.saveBest()
+            '''elif train_last_loss < train_loss: # or self.model.current_epoch % 3 == 0:
+                self.model.decayLearningRate(self.lr_decay)'''
             val_last_infer_loss = val_infer_loss
             train_last_loss = train_loss
             val_last_loss = val_loss
+            self.curriculum_level += 0.25 # is this the right choice???
+            self.model.decayLearningRate(self.lr_decay)
 
     def testModel(self):
         self.best = True
@@ -208,6 +242,207 @@ class Trainer:
         self.loadModel(self.model.model_dir, only_inference=True)
         train_loss, train_accuracy, infer_loss, test_infer_accuracy = \
             self.__iterateOneEpoch('test', True)
+
+    def loadModel(self, model_dir=None, feature_extractor='', \
+            encoder='', decoder='', encoder_size='', decoder_size='',
+            optimizer='', max_num_tokens=150, only_inference=False):
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        print('###                 Try to restore model!                 ###')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        if model_dir == None:
+            model_dir = self.findBestModel(feature_extractor, encoder, decoder,\
+                encoder_size, decoder_size, optimizer)
+        print(model_dir)
+        #if model_dir.split('/')[-1][0] == '_':
+        #    code.interact(local=dict(globals(), **locals()))
+        self.model = Model(model_dir, max_num_tokens=max_num_tokens, loaded=True,
+            only_inference=only_inference)
+        print('load variables!')
+        if self.best:
+            self.model.restoreBestCheckpoint()
+        else:
+            self.model.restoreLastCheckpoint()
+        if not only_inference:
+            self.model.createOptimizer()
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        print('###                    Model restored!                    ###')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+
+        
+    def combineModels(self, fe_dir=None, ed_dir=None, feature_extractor='', \
+            encoder='', decoder='', encoder_size='', decoder_size='',
+            optimizer='', max_num_tokens=None):
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        print('###                Try to combine models!                 ###')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        if fe_dir == None:
+            fe_dir = self.findBestModel(feature_extractor, optimizer=optimizer)
+        variables = {}
+        self.loadModel(fe_dir)
+        feature_extractor = self.model.feature_extractor
+        for v in tf.global_variables():
+            value = self.model.session.run(v)
+            variables.update({str(v.name): value})
+        #if ed_dir == None:
+        #    ed_dir = self.findBestModel(feature_extractor, optimizer=optimizer)
+        self.loadModel(ed_dir)
+        for v in tf.global_variables():
+            value = self.model.session.run(v)
+            variables.update({str(v.name): value})
+        #code.interact(local=dict(globals(), **locals()))
+        self.model = Model(self.model_dir, feature_extractor=feature_extractor, \
+            encoder=self.model.encoder, decoder=self.model.decoder, \
+            encoder_size=self.model.decoder_size, \
+            decoder_size=self.model.decoder_size, \
+            optimizer=self.model.optimizer, vocabulary=self.vocabulary, \
+            max_num_tokens=self.model.max_num_tokens, \
+            capacity = self.capacity)
+        for v in tf.trainable_variables():
+            if v.name in variables.keys():
+                v = v.assign(variables[v.name])
+                x = self.model.session.run(v)
+        self.model.printGlobalVariables()
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+        print('###                   Models combined!                    ###')
+        print('#############################################################')
+        print('#############################################################')
+        print('#############################################################')
+
+    def __iterateOneEpochStochastic(self):
+        # the tracked values
+        train_losses = []
+        train_accuracies = []
+        infer_losses = []
+        infer_accuracies = []
+        #
+        sampled_batches = np.random.choice(self.number_batches, self.batches_per_epoch, \
+            p=self.softmax(self.train_batch_avg_losses))
+        # one epoch iteration
+        for batch_iteration in range(len(sampled_batches)):
+            batchnr = sampled_batches[batch_iteration]
+            print('Train iteration ' + str(batch_iteration) + ' from ' + \
+                str(self.batches_per_epoch))
+            #
+            samplewise_losses = None
+            # load the chosen batch
+            batch = np.load(self.__getBatchDir('train') + '/' + self.train_batch_names[batchnr])
+            batch_images = batch['images']
+            batch_labels = batch['labels']
+            # sample from it
+            sampled_samples = np.random.choice( \
+                len(self.train_sample_losses[batchnr]), \
+                self.samples_per_batch, \
+                p=self.softmax(self.train_sample_losses[batchnr]))
+            batch_images_sampled = []
+            batch_labels_sampled = []
+            for samplenr in range(len(sampled_samples)):
+                image_buffer = batch_images[sampled_samples[samplenr]]
+                image_buffer = np.expand_dims(image_buffer,0)
+                batch_images_sampled.append(image_buffer)
+                label_buffer = batch_labels[sampled_samples[samplenr]]
+                label_buffer = np.expand_dims(label_buffer,0)
+                batch_labels_sampled.append(label_buffer)
+            batch_images_sampled = np.concatenate(batch_images_sampled)
+            batch_labels_sampled = np.concatenate(batch_labels_sampled)
+            # the size of each minibatch (depends on the size of the input)
+            minibatchsize  = self.__calculateMinibatchsize(batch_images[0])
+            if minibatchsize == 0:
+                print('images to big to process')
+                continue
+            # reloads the model if it doesn't fit the maximal number of tokens
+            # this is possible due to the invariant number of weights related to token number
+            if batch_labels.shape[-1] != self.model.max_num_tokens:
+                self.loadModel(self.model.model_dir, max_num_tokens= \
+                    batch_labels.shape[-1], only_inference=self.model.only_inference)
+                print('model needed to be reloaded, this will cause massive slowdown!')
+            #
+            last_output_time = time.time()
+            print_status = True
+            # the actual epoch iteration loop
+            for minibatch_it in range(self.samples_per_batch / minibatchsize):
+                # create the minibatches
+                left_bound = minibatch_it * minibatchsize
+                right_bound = (minibatch_it + 1) * minibatchsize
+                minibatch_images = batch_images_sampled[left_bound:right_bound]
+                minibatch_labels = batch_labels_sampled[left_bound:right_bound]
+                # make the prints for the minibatch
+                if print_status:
+                    print('trainminibatch(' + str(self.model.current_epoch) + ',' + \
+                        str(batch_iteration) + ',' + str(minibatch_it*minibatchsize)+')[' + \
+                        str(minibatch_it) + '] : '+ str(minibatch_images.shape) + \
+                        ' : ' + str(minibatch_labels.shape))
+                    print(self.preprocessing.split('_')[0] + self.model.model_dir)
+                # the actual train step
+                self.model.trainStep(minibatch_images, minibatch_labels)
+                # update the samplewise losses
+                current_samplewise_losses = np.mean(self.model.current_samplewise_losses,1)
+                if samplewise_losses is None:
+                    print('create losses array')
+                    samplewise_losses = current_samplewise_losses
+                else:
+                    samplewise_losses = np.concatenate( \
+                        [samplewise_losses, current_samplewise_losses])
+                #
+                train_losses.append(self.model.current_train_loss)
+                train_accuracies.append(self.model.current_train_accuracy)
+                if print_status:
+                    print(str(self.model.current_train_loss) + ' : ' + \
+                        str(np.mean(train_losses)) + ' : ' + \
+                        str(self.model.current_train_accuracy) + ' : ' + \
+                        str(np.mean(train_accuracies)))
+                #
+                infer_losses.append(self.model.current_infer_loss)
+                infer_accuracies.append(self.model.current_infer_accuracy)
+                if print_status:
+                    print(str(self.model.current_infer_loss) + ' : ' + \
+                        str(np.mean(infer_losses)) + ' : ' + \
+                        str(self.model.current_infer_accuracy) + ' : ' + \
+                        str(np.mean(infer_accuracies)))
+                # update output control mechanism
+                now = time.time()
+                if now - last_output_time < 50:
+                    print_time = False
+                else:
+                    print_time = True
+                    lat_output_time = now
+            # update the batch losses
+            for samplenr in range(len(sampled_samples)):
+                self.train_sample_losses[batchnr][sampled_samples[samplenr]] \
+                    = samplewise_losses[samplenr]
+            # update the average batch losses
+            self.train_batch_avg_losses[batchnr] = \
+                np.mean(self.train_sample_losses[batchnr])
+        return np.mean(train_losses), np.mean(train_accuracies), \
+            np.mean(infer_losses), np.mean(infer_accuracies)
+
+    def __calculateMinibatchsize(self, image):
+        minibatchsize = 20
+        while image.shape[0] * image.shape[1] * image.shape[2] * minibatchsize > \
+                self.model.capacity:
+            minibatchsize = minibatchsize - 1
+        # code.interact(local=dict(globals(), **locals()))
+        return minibatchsize
+
+    def __createMinibatch(self, batch_data, minibatch_it, minibatchsize):
+        minibatch_data = []
+        for it in range(minibatch_it * minibatchsize, min((minibatch_it + 1) * \
+                minibatchsize,len(batch_data))):
+            minibatch_data.append(batch_data[it])
+        return np.array(minibatch_data)
 
     def __iterateOneEpoch(self, phase, visualize_attention=False):
         #
@@ -395,193 +630,8 @@ class Trainer:
                     str(self.model.current_epoch), str(np.mean(infer_accuracies)))
             except Exception:
                 print('params couldnt be saved!')
-            '''if self.model.used_loss == 'classes':
-                with open(self.model.model_dir + '/confusion.npz', 'w') as fout:
-                    np.savez(fout,false2false=false2false,false2true=false2true, \
-                        true2true=true2true,true2false=true2false)
-                stats = {}
-                for c in range(self.model.num_classes):
-                    num_right = float(false2false[c] + true2true[c])
-                    num = float(false2false[c] + true2true[c] + false2true[c] + true2false[c])
-                    n = true2true[c] + true2false[c]
-                    class_accuracy = num_right / num
-                    f2f = false2false[c] / num
-                    t2t = true2true[c] / num
-                    f2t = false2true[c] / num
-                    t2f = true2false[c] / num
-                    stats.update({(class_accuracy,c):(self.model.vocabulary[c], str(f2f), \
-                        str(t2t), str(f2t), str(t2f), str(num))})
-                keys = sorted(stats.keys())
-                s = ''
-                for key in keys:
-                    c, f2f, t2t, f2t, t2f, n = stats[key]
-                    s = s +'\"'+c+'\" : '+str(key[0])+' : ('+f2f+','+t2t+','+f2t+','+ \
-                        t2f+') : ' + n + '\n'
-                self.model.writeParam(phase + 'stats/epoch' + \
-                    str(self.model.current_epoch), absolute_acc)'''
         return np.mean(train_losses), np.mean(train_accuracies), \
             np.mean(infer_losses), np.mean(infer_accuracies)
-
-    def loadModel(self, model_dir=None, feature_extractor='', \
-            encoder='', decoder='', encoder_size='', decoder_size='',
-            optimizer='', max_num_tokens=150, only_inference=False):
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-        print('###                 Try to restore model!                 ###')
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-        if model_dir == None:
-            model_dir = self.findBestModel(feature_extractor, encoder, decoder,\
-                encoder_size, decoder_size, optimizer)
-        print(model_dir)
-        #if model_dir.split('/')[-1][0] == '_':
-        #    code.interact(local=dict(globals(), **locals()))
-        self.model = Model(model_dir, max_num_tokens=max_num_tokens, loaded=True,
-            only_inference=only_inference)
-        print('load variables!')
-        if self.best:
-            self.model.restoreBestCheckpoint()
-        else:
-            self.model.restoreLastCheckpoint()
-        if not only_inference:
-            self.model.createOptimizer()
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-        print('###                    Model restored!                    ###')
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-
-        
-    def combineModels(self, fe_dir=None, ed_dir=None, feature_extractor='', \
-            encoder='', decoder='', encoder_size='', decoder_size='',
-            optimizer='', max_num_tokens=None):
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-        print('###                Try to combine models!                 ###')
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-        if fe_dir == None:
-            fe_dir = self.findBestModel(feature_extractor, optimizer=optimizer)
-        variables = {}
-        self.loadModel(fe_dir)
-        feature_extractor = self.model.feature_extractor
-        for v in tf.global_variables():
-            value = self.model.session.run(v)
-            variables.update({str(v.name): value})
-        #if ed_dir == None:
-        #    ed_dir = self.findBestModel(feature_extractor, optimizer=optimizer)
-        self.loadModel(ed_dir)
-        for v in tf.global_variables():
-            value = self.model.session.run(v)
-            variables.update({str(v.name): value})
-        #code.interact(local=dict(globals(), **locals()))
-        self.model = Model(self.model_dir, feature_extractor=feature_extractor, \
-            encoder=self.model.encoder, decoder=self.model.decoder, \
-            encoder_size=self.model.decoder_size, \
-            decoder_size=self.model.decoder_size, \
-            optimizer=self.model.optimizer, vocabulary=self.vocabulary, \
-            max_num_tokens=self.model.max_num_tokens, \
-            capacity = self.capacity)
-        for v in tf.trainable_variables():
-            if v.name in variables.keys():
-                v = v.assign(variables[v.name])
-                x = self.model.session.run(v)
-        self.model.printGlobalVariables()
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-        print('###                   Models combined!                    ###')
-        print('#############################################################')
-        print('#############################################################')
-        print('#############################################################')
-
-    '''def renderImages(self, model_dir='', phase='test'):
-        if model_dir == '':
-            model_dir = self.model.model_dir
-            epoch = self.model.current_epoch
-        else:
-            epoch = int(self.readLog(model_dir + '/params/current_epoch'))
-        if phase == 'val':
-            epoch = epoch - 1
-        result_path = model_dir + '/params/'+ phase + '_results/epoch' + str(epoch)
-        self.renderOutput(result_path)
-
-    def renderOutput(self, result_path):
-        my_renderer.render_output(result_path)
-
-    def evaluate(self):
-        decoder = self.readLog(model_dir + '/params/decoder')
-        encoder_size = self.readLog(model_dir + '/params/encoder_size')
-        decoder_size = self.readLog(model_dir + '/params/decoder_size')
-        optimizer = self.readLog(model_dir + '/params/optimizer')
-        best_model_path = self.__findBestModel(feature_extractor, encoder, \
-            decoder, encoder_size, optimizer)
-        if best_model_path != None:
-            best_val_text_edit_distance = \
-                float(self.readLog(best_model_path+'/val_text_edit_distance'))
-            if val_text_edit_distance < best_val_text_edit_distance:
-                return val_text_edit_distance
-        #path = self.tmp_dir + '/' + self.preprocessing + self.model.getTrainMode() + '_' \
-        #    + self.mode
-        path = self.tmp_dir + '/' + feature_extractor + '_' + encoder + '_' + decoder + '_' +\
-            encoder_size + '_' + decoder_size + '_' + optimizer
-        self.writeLog(path, model_dir)
-        return val_text_edit_distance
-
-    def evaluateFormulas(self, model_dir, result_path):
-        token_accuracy = self.calculateTokenAccuracy(result_path)
-        print('token accuracy: ' + str(token_accuracy))
-        self.writeLog(model_dir + '/token_accuracy', token_accuracy)
-        abs_accuracy = self.calculateAbsoluteAccuracy(result_path)
-        print('absolute accuracy: ' + str(abs_accuracy))
-        self.writeLog(model_dir + '/abs_accuracy', abs_accuracy)
-        text_edit_distance = self.calculateEditDistance(result_path)
-        print('text edit distance: ' + str(text_edit_distance))
-        self.writeLog(model_dir + '/val_text_edit_distance', val_text_edit_distance)
-
-    def evaluateImages(self, model_dir, img_dir):
-        image_edit_distance, image_accuracy = iedc.calcImageEditDistance(img_dir)
-        print('image edit distance: ' + str(image_edit_distance))
-        print('image accuracy: ' + str(image_accuracy))
-        self.writeLog(model_dir + '/image_edit_distance', image_edit_distance)
-        self.writeLog(model_dir + '/image_accuracy', image_accuracy)'''
-
-    def readLog(self, path):
-        reader = open(path,'r')
-        value = reader.read()
-        reader.close()
-        return value
-
-    def writeLog(self, path, value):
-        writer = open(path,'w')
-        value = writer.write(str(value))
-        writer.close()
-
-    def calculateEditDistance(self, result_file):
-        total_ref = 0
-        total_edit_distance = 0
-        with open(result_file) as fin:
-            for idx,line in enumerate(fin):
-                if idx % 100 == 0:
-                    print (idx)
-                items = line.strip().split('\t')
-                if len(items) == 5:
-                    img_path, label_gold, label_pred, score_pred, score_gold = items
-                    l_pred = label_pred.strip()
-                    l_gold = label_gold.strip()
-                    tokens_pred = l_pred.split(' ')
-                    tokens_gold = l_gold.split(' ')
-                    ref = max(len(tokens_gold), len(tokens_pred))
-                    edit_distance = distance.levenshtein(tokens_gold, tokens_pred)
-                    total_ref += ref
-                    total_edit_distance += edit_distance
-        return 1.0 - float(total_edit_distance) / total_ref
 
     def __findBestModel(self, feature_extractor='', encoder='', decoder='', \
         encoder_size=0, decoder_size=0, optimizer=''):
@@ -656,6 +706,17 @@ class Trainer:
                 minibatchsize,len(batch_data))):
             minibatch_data.append(batch_data[it])
         return np.array(minibatch_data)
+
+    def readLog(self, path):
+        reader = open(path,'r')
+        value = reader.read()
+        reader.close()
+        return value
+
+    def writeLog(self, path, value):
+        writer = open(path,'w')
+        value = writer.write(str(value))
+        writer.close()
 
     def saveLossGraph(self):
         train_train_loss_strings = self.model.readParamList('stats/losses/train_train')
@@ -739,5 +800,9 @@ class Trainer:
         plt.savefig(save_path + '/epoch' + str(self.model.current_epoch))
         plt.close()
 
-
+    def softmax(self, x):
+        # other factors then e
+        # initialize small (<1) and make bigger (>1)
+        return np.power(self.curriculum_level, x) / \
+            np.sum(np.power(self.curriculum_level, x), axis=0)
 
