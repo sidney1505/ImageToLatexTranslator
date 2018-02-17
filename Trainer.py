@@ -373,7 +373,9 @@ class Trainer:
             last_output_time = time.time()
             print_status = True
             # the actual epoch iteration loop
-            for minibatch_it in range(self.samples_per_batch / minibatchsize):
+            for minibatch_it in range(self.samples_per_batch / minibatchsize + 1):
+                if minibatch_it * minibatchsize == self.samples_per_batch:
+                    break
                 # create the minibatches
                 left_bound = minibatch_it * minibatchsize
                 right_bound = (minibatch_it + 1) * minibatchsize
@@ -421,8 +423,11 @@ class Trainer:
                     lat_output_time = now
             # update the batch losses
             for samplenr in range(len(sampled_samples)):
-                self.train_sample_losses[batchnr][sampled_samples[samplenr]] \
-                    = samplewise_losses[samplenr]
+                try:
+                    self.train_sample_losses[batchnr][sampled_samples[samplenr]] \
+                        = samplewise_losses[samplenr]
+                except Exception:
+                    code.interact(local=dict(globals(), **locals()))
             # update the average batch losses
             self.train_batch_avg_losses[batchnr] = \
                 np.mean(self.train_sample_losses[batchnr])
